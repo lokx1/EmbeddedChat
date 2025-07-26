@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     
     # Database
-    DATABASE_URL: str = "postgresql+asyncpg://user:password@localhost/embeddedchat"
+    DATABASE_URL: str = "sqlite+aiosqlite:///./embeddedchat.db"
     
     # Security
     SECRET_KEY: str = "your-secret-key-change-in-production"

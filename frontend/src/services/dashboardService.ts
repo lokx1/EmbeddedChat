@@ -1,119 +1,304 @@
-// API service for dashboard statistics and data
-const API_BASE_URL = 'http://localhost:8000/api/v1';
-
-export interface DashboardStats {
-  activeChats: number;
-  totalDocuments: number;
-  totalWorkflows: number;
-  teamMembers: number;
-  chatGrowth: string;
-  documentGrowth: string;
-  workflowGrowth: string;
-  memberGrowth: string;
+// Dashboard API service
+interface DashboardStats {
+  total_conversations: number;
+  total_messages: number;
+  total_documents: number;
+  total_users: number;
+  active_conversations_today: number;
+  messages_today: number;
+  avg_messages_per_conversation: number;
+  most_active_day: string;
+  ai_providers_status: any;
 }
 
-export interface RecentActivityItem {
+interface ActivityData {
+  date: string;
+  conversations: number;
+  messages: number;
+  documents_uploaded: number;
+}
+
+interface SystemHealth {
+  overall_status: string;
+  components: {
+    database: { status: string; error?: string };
+    ai_service: any;
+    system_resources: {
+      memory_usage_percent: number;
+      cpu_usage_percent: number;
+      disk_usage_percent: number;
+      status: string;
+    };
+  };
+}
+
+interface ConversationStats {
   id: string;
-  type: 'chat' | 'document' | 'workflow' | 'error';
   title: string;
-  description: string;
-  timestamp: string;
-  status: 'success' | 'error' | 'warning' | 'info';
-  userId?: number;
-  userName?: string;
+  message_count: number;
+  last_activity: string;
+  duration_minutes?: number;
+  ai_provider_used?: string;
+  has_documents: boolean;
 }
 
-class DashboardService {
-  private async fetchWithAuth(endpoint: string, options: RequestInit = {}) {
-    const token = localStorage.getItem('auth_token');
-    
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token && { Authorization: `Bearer ${token}` }),
-        ...options.headers,
-      },
-    });
+interface AIProviderStats {
+  provider: string;
+  status: string;
+  total_requests: number;
+  avg_response_time: number;
+  success_rate: number;
+  models_available: number;
+  last_used?: string;
+}
 
+export class DashboardService {
+  private baseUrl = '/api/v1/dashboard';
+
+  async getStats(days: number = 30): Promise<DashboardStats> {
+    const response = await fetch(`${this.baseUrl}/stats?days=${days}`);
     if (!response.ok) {
-      throw new Error(`API Error: ${response.status}`);
+      throw new Error(`Failed to fetch stats: ${response.statusText}`);
     }
-
     return response.json();
   }
 
-  async getDashboardStats(): Promise<DashboardStats> {
-    try {
-      console.log('DashboardService: Fetching stats from', `${API_BASE_URL}/dashboard/stats`);
-      const response = await this.fetchWithAuth('/dashboard/stats');
-      console.log('DashboardService: Raw API response:', response);
-      
-      // Convert snake_case to camelCase
-      const stats: DashboardStats = {
-        activeChats: response.active_chats || 0,
-        totalDocuments: response.total_documents || 0,
-        totalWorkflows: response.total_workflows || 0,
-        teamMembers: response.team_members || 1,
-        chatGrowth: response.chat_growth || 'No data',
-        documentGrowth: response.document_growth || 'No data',
-        workflowGrowth: response.workflow_growth || 'No data',
-        memberGrowth: response.member_growth || 'No change',
-      };
-      
-      console.log('DashboardService: Converted stats:', stats);
-      return stats;
-    } catch (error) {
-      console.error('Failed to fetch dashboard stats:', error);
-      // Return mock data as fallback
-      const fallbackStats = {
-        activeChats: 0,
-        totalDocuments: 0,
-        totalWorkflows: 0,
-        teamMembers: 1,
-        chatGrowth: 'No data',
-        documentGrowth: 'No data',
-        workflowGrowth: 'No data',
-        memberGrowth: 'No change',
-      };
-      console.log('DashboardService: Using fallback stats:', fallbackStats);
-      return fallbackStats;
+  async getActivity(days: number = 30): Promise<{ activity_data: ActivityData[] }> {
+    const response = await fetch(`${this.baseUrl}/activity?days=${days}`);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch activity: ${response.statusText}`);
     }
+    return response.json();
   }
 
-  async getRecentActivity(): Promise<RecentActivityItem[]> {
-    try {
-      console.log('DashboardService: Fetching activity from', `${API_BASE_URL}/dashboard/activity`);
-      const response = await this.fetchWithAuth('/dashboard/activity');
-      console.log('DashboardService: Activity response:', response);
-      return response;
-    } catch (error) {
-      console.error('Failed to fetch recent activity:', error);
-      // Return empty array as fallback
-      console.log('DashboardService: Using empty activity array as fallback');
-      return [];
+  async getSystemHealth(): Promise<SystemHealth> {
+    const response = await fetch(`${this.baseUrl}/system-health`);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch system health: ${response.statusText}`);
     }
+    return response.json();
   }
 
-  async getUserSessions(): Promise<any[]> {
-    try {
-      const response = await this.fetchWithAuth('/chat/sessions');
-      return response;
-    } catch (error) {
-      console.error('Failed to fetch user sessions:', error);
-      return [];
+  async getRecentConversations(limit: number = 20): Promise<{ conversations: ConversationStats[] }> {
+    const response = await fetch(`${this.baseUrl}/conversations?limit=${limit}`);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch conversations: ${response.statusText}`);
     }
+    return response.json();
   }
 
-  async getDocuments(): Promise<any[]> {
-    try {
-      const response = await this.fetchWithAuth('/documents');
-      return response;
-    } catch (error) {
-      console.error('Failed to fetch documents:', error);
-      return [];
+  async getAIProviderStats(): Promise<{ providers: AIProviderStats[] }> {
+    const response = await fetch(`${this.baseUrl}/ai-providers`);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch AI provider stats: ${response.statusText}`);
     }
+    return response.json();
+  }
+
+  async exportConversations(format: 'json' | 'csv' = 'json', days: number = 30): Promise<any> {
+    const response = await fetch(`${this.baseUrl}/export/conversations?format=${format}&days=${days}`);
+    if (!response.ok) {
+      throw new Error(`Failed to export conversations: ${response.statusText}`);
+    }
+    return response.json();
+  }
+
+  // Real-time dashboard updates
+  async startRealTimeUpdates(callback: (data: any) => void): Promise<() => void> {
+    const eventSource = new EventSource(`${this.baseUrl}/realtime`);
+    
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        callback(data);
+      } catch (error) {
+        console.error('Error parsing real-time data:', error);
+      }
+    };
+
+    eventSource.onerror = (error) => {
+      console.error('Real-time connection error:', error);
+    };
+
+    // Return cleanup function
+    return () => {
+      eventSource.close();
+    };
   }
 }
 
+// Memory API service
+interface Memory {
+  id: string;
+  content: string;
+  context: string;
+  relevance_score?: number;
+  created_at: string;
+  conversation_id?: string;
+}
+
+interface ConversationSummary {
+  id: string;
+  summary: string;
+  key_points: string[];
+  created_at: string;
+  conversation_id: string;
+}
+
+export class MemoryService {
+  private baseUrl = '/api/v1/memory';
+
+  async getMemories(): Promise<Memory[]> {
+    const response = await fetch(this.baseUrl);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch memories: ${response.statusText}`);
+    }
+    return response.json();
+  }
+
+  async getSummaries(): Promise<ConversationSummary[]> {
+    const response = await fetch(`${this.baseUrl}/summaries`);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch summaries: ${response.statusText}`);
+    }
+    return response.json();
+  }
+
+  async createMemory(memory: Omit<Memory, 'id' | 'created_at'>): Promise<Memory> {
+    const response = await fetch(this.baseUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(memory),
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Failed to create memory: ${response.statusText}`);
+    }
+    return response.json();
+  }
+
+  async updateMemory(id: string, updates: Partial<Memory>): Promise<Memory> {
+    const response = await fetch(`${this.baseUrl}/${id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(updates),
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Failed to update memory: ${response.statusText}`);
+    }
+    return response.json();
+  }
+
+  async deleteMemory(id: string): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/${id}`, {
+      method: 'DELETE',
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Failed to delete memory: ${response.statusText}`);
+    }
+  }
+
+  async extractMemory(content: string, context: string, conversationId?: string): Promise<Memory> {
+    const response = await fetch(`${this.baseUrl}/extract`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        content,
+        context,
+        conversation_id: conversationId,
+      }),
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Failed to extract memory: ${response.statusText}`);
+    }
+    return response.json();
+  }
+}
+
+// AI Service API
+export class AIService {
+  private baseUrl = '/api/v1/ai';
+
+  async getProviders(): Promise<any> {
+    const response = await fetch(`${this.baseUrl}/providers`);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch providers: ${response.statusText}`);
+    }
+    return response.json();
+  }
+
+  async getModels(): Promise<any[]> {
+    const response = await fetch(`${this.baseUrl}/models`);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch models: ${response.statusText}`);
+    }
+    return response.json();
+  }
+
+  async getHealth(): Promise<any> {
+    const response = await fetch(`${this.baseUrl}/health`);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch AI health: ${response.statusText}`);
+    }
+    return response.json();
+  }
+
+  async chat(request: {
+    message: string;
+    model?: string;
+    provider?: string;
+    conversation_id?: string;
+    stream?: boolean;
+    temperature?: number;
+    max_tokens?: number;
+    files?: string[];
+    context?: string;
+  }): Promise<Response> {
+    const response = await fetch(`${this.baseUrl}/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Failed to send chat: ${response.statusText}`);
+    }
+    
+    return response;
+  }
+
+  async getThinking(request: {
+    message: string;
+    provider?: string;
+    context?: string;
+  }): Promise<{ thinking_steps: string[] }> {
+    const response = await fetch(`${this.baseUrl}/thinking`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Failed to get thinking: ${response.statusText}`);
+    }
+    return response.json();
+  }
+}
+
+// Export service instances
 export const dashboardService = new DashboardService();
+export const memoryService = new MemoryService();
+export const aiService = new AIService();

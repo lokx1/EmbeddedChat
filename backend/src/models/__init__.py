@@ -4,6 +4,7 @@ from .user import User
 from .conversation import Conversation
 from .message import Message, MessageType
 from .document import Document, DocumentStatus
+from .ai_provider import AIProvider, AIModel
 
 __all__ = [
     "Base",
@@ -13,5 +14,7 @@ __all__ = [
     "Message", 
     "MessageType",
     "Document",
-    "DocumentStatus"
+    "DocumentStatus",
+    "AIProvider",
+    "AIModel"
 ]

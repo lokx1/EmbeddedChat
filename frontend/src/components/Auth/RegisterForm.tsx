@@ -1,7 +1,7 @@
 // Register form component
 import React, { useState } from 'react';
-import { Button } from '../UI/Button.tsx';
-import { Input } from '../UI/Input.tsx';
+import { Button } from '../UI/Button';
+import { Input } from '../UI/Input';
 
 interface RegisterFormProps {
   onRegister: (userData: RegisterData) => Promise<void>;

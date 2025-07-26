@@ -63,11 +63,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const initializeAuth = async () => {
       try {
         const token = localStorage.getItem('auth_token');
-        console.log('AuthContext: Initializing auth, token exists:', !!token);
-        
         if (token) {
           // Verify token and get user info
-          console.log('AuthContext: Verifying token with /auth/me');
           const response = await fetch(`${API_BASE_URL}/auth/me`, {
             headers: {
               'Authorization': `Bearer ${token}`,
@@ -77,7 +74,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
           if (response.ok) {
             const user = await response.json();
-            console.log('AuthContext: Token valid, user:', user);
             setAuthState({
               user,
               token,
@@ -87,7 +83,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             });
           } else {
             // Token is invalid, remove it
-            console.log('AuthContext: Token invalid, response status:', response.status);
             localStorage.removeItem('auth_token');
             setAuthState(prev => ({
               ...prev,
@@ -95,7 +90,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             }));
           }
         } else {
-          console.log('AuthContext: No token found, setting loading to false');
           setAuthState(prev => ({
             ...prev,
             loading: false

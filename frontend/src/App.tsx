@@ -1,20 +1,17 @@
-// Main App component with enhanced workspace integration
-import React from 'react';
-import { AuthProvider, useAuth } from './components/Auth/AuthContext.tsx';
-import { AuthPage } from './components/Auth/AuthPage.tsx';
-import { WorkspaceManager } from './components/Workspace/WorkspaceManager.tsx';
-import { ThemeProvider } from './contexts/ThemeContext.tsx';
-import { NotificationProvider } from './components/UI/NotificationSystem.tsx';
+import { ThemeProvider } from './contexts/ThemeContext';
+import { AuthProvider, useAuth } from './components/Auth/AuthContext';
+import { AuthPage } from './components/Auth/AuthPage';
+import SimpleLayout from './components/Layout/SimpleLayout';
 
-const AppContent: React.FC = () => {
+function AppContent() {
   const { isAuthenticated, loading } = useAuth();
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 transition-colors duration-300">
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="mt-4 text-gray-600 dark:text-gray-300">Loading EmbeddedChat...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading...</p>
         </div>
       </div>
     );
@@ -24,20 +21,17 @@ const AppContent: React.FC = () => {
     return <AuthPage />;
   }
 
-  return <WorkspaceManager />;
-};
+  return <SimpleLayout />;
+}
 
-// Root App component with all providers
-export const App: React.FC = () => {
+function App() {
   return (
     <ThemeProvider>
-      <NotificationProvider>
-        <AuthProvider>
-          <AppContent />
-        </AuthProvider>
-      </NotificationProvider>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
     </ThemeProvider>
   );
-};
+}
 
 export default App;

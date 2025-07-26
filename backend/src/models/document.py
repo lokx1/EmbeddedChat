@@ -22,7 +22,7 @@ class Document(BaseModel):
     mime_type = Column(String(100), nullable=False)
     
     # Processing status
-    status = Column(Enum(DocumentStatus), default=DocumentStatus.UPLOADING)
+    status = Column(String(20), default=DocumentStatus.UPLOADING)
     error_message = Column(Text)
     
     # User relationship

@@ -1,0 +1,43 @@
+Technical Architecture Overview
+
+EmbeddedChat is built with modern technologies for scalability and performance:
+
+Backend Stack:
+- FastAPI: High-performance web framework
+- SQLAlchemy: Async ORM for database operations
+- ChromaDB: Vector database for document embeddings
+- Sentence Transformers: Text embedding generation
+- PostgreSQL: Primary database for structured data
+
+Frontend Stack:
+- React: Component-based UI framework
+- TypeScript: Type-safe JavaScript development
+- Tailwind CSS: Utility-first CSS framework
+- Vite: Fast build tool and development server
+
+Key Components:
+1. Document Processing Pipeline
+   - File upload and validation
+   - Text extraction from various formats
+   - Content chunking for optimal retrieval
+   - Vector embedding generation
+   - Storage in both SQL and vector databases
+
+2. RAG (Retrieval Augmented Generation)
+   - Semantic search across document chunks
+   - Context retrieval for AI responses
+   - Relevance scoring and filtering
+   - Multi-document context aggregation
+
+3. Real-time Features
+   - WebSocket connections for live chat
+   - Background document processing
+   - Real-time status updates
+   - Live typing indicators
+
+Security Features:
+- JWT-based authentication
+- Role-based access control
+- File type validation
+- Size limits and rate limiting
+- CORS protection

@@ -1,0 +1,48 @@
+API Documentation
+
+Authentication Endpoints:
+POST /api/v1/auth/register - Register new user
+POST /api/v1/auth/login - User login
+POST /api/v1/auth/login-json - JSON-based login
+GET /api/v1/auth/me - Get current user info
+
+Document Management:
+POST /api/v1/documents/upload - Upload document
+GET /api/v1/documents/ - List user documents
+DELETE /api/v1/documents/{id} - Delete document
+POST /api/v1/documents/search - Search documents
+GET /api/v1/documents/{id}/context - Get document chunks
+GET /api/v1/documents/{id}/related - Find related documents
+GET /api/v1/documents/stats - Document statistics
+
+Chat Endpoints:
+GET /api/v1/chat/conversations - List conversations
+POST /api/v1/chat/conversations - Create conversation
+GET /api/v1/chat/conversations/{id} - Get conversation
+DELETE /api/v1/chat/conversations/{id} - Delete conversation
+POST /api/v1/chat/conversations/{id}/messages - Send message
+WebSocket /api/v1/chat/ws/{conversation_id} - Real-time chat
+
+Dashboard Analytics:
+GET /api/v1/dashboard/stats/overview - Overview statistics
+GET /api/v1/dashboard/stats/chat - Chat analytics
+GET /api/v1/dashboard/stats/user - User analytics
+GET /api/v1/dashboard/stats/document - Document statistics
+GET /api/v1/dashboard/stats/system - System performance
+
+Error Handling:
+All endpoints return standard HTTP status codes:
+- 200: Success
+- 201: Created
+- 400: Bad Request
+- 401: Unauthorized
+- 403: Forbidden
+- 404: Not Found
+- 422: Validation Error
+- 500: Internal Server Error
+
+Rate Limiting:
+- Authentication: 10 requests per minute
+- Document upload: 5 requests per minute
+- Chat messages: 60 requests per minute
+- Search queries: 30 requests per minute

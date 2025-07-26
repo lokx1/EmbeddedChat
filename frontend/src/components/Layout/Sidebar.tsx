@@ -1,5 +1,6 @@
 // Enhanced sidebar with navigation and feature modules
 import React, { useState } from 'react';
+import { useTheme } from '../../contexts/ThemeContext';
 import {
   ChatBubbleLeftRightIcon,
   DocumentTextIcon,
@@ -93,6 +94,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   activeModule = 'dashboard',
   onModuleChange = () => {}
 }) => {
+  const { isDark } = useTheme();
   const [expandedItems, setExpandedItems] = useState<string[]>(['documents']);
 
   const toggleExpanded = (itemId: string) => {
@@ -112,11 +114,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div key={item.id}>
         <div
           className={`
-            group flex items-center px-3 py-2 text-sm font-medium rounded-lg cursor-pointer transition-colors
+            group flex items-center px-3 py-2.5 text-sm font-medium rounded-lg cursor-pointer transition-all duration-200
             ${depth > 0 ? 'ml-6' : ''}
             ${isActive 
-              ? 'bg-blue-100 text-blue-700 border-r-2 border-blue-700' 
-              : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
+              ? (isDark ? 'bg-blue-900/50 text-blue-300 border-r-2 border-blue-300' : 'bg-blue-100 text-blue-700 border-r-2 border-blue-700')
+              : (isDark ? 'text-gray-300 hover:bg-gray-700/50 hover:text-white' : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900')
             }
           `}
           onClick={() => {
@@ -127,17 +129,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
             }
           }}
         >
-          <item.icon 
-            className={`
-              ${collapsed ? 'w-6 h-6' : 'w-5 h-5'} 
-              ${isActive ? 'text-blue-700' : 'text-gray-400 group-hover:text-gray-500'}
-              transition-colors
-            `} 
-          />
+          <div className="flex items-center justify-center w-6 h-6 mr-3 flex-shrink-0">
+            <item.icon 
+              className={`
+                w-5 h-5
+                ${isActive ? (isDark ? 'text-blue-300' : 'text-blue-700') : (isDark ? 'text-gray-400' : 'text-gray-500')}
+                group-hover:${isDark ? 'text-white' : 'text-gray-900'}
+                transition-colors
+              `} 
+            />
+          </div>
           
           {!collapsed && (
             <>
-              <span className="ml-3 flex-1">{item.label}</span>
+              <span className="flex-1 text-left">{item.label}</span>
               
               {item.badge && (
                 <span className="ml-2 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white bg-red-500 rounded-full">
@@ -166,18 +171,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <div className={`
-      fixed left-0 top-0 h-full bg-white border-r border-gray-200 shadow-sm transition-all duration-300 z-40
+      h-full transition-all duration-300 flex-shrink-0
       ${collapsed ? 'w-16' : 'w-64'}
+      ${isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}
+      border-r shadow-sm
     `}>
       {/* Toggle Button */}
       <button
         onClick={onToggle}
-        className="absolute -right-3 top-8 w-6 h-6 bg-white border border-gray-200 rounded-full flex items-center justify-center shadow-md hover:shadow-lg transition-shadow"
+        className={`absolute -right-3 top-8 w-6 h-6 ${isDark ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'} border rounded-full flex items-center justify-center shadow-md hover:shadow-lg transition-shadow`}
       >
         {collapsed ? (
-          <ChevronRightIcon className="w-4 h-4 text-gray-600" />
+          <ChevronRightIcon className={`w-4 h-4 ${isDark ? 'text-gray-300' : 'text-gray-600'}`} />
         ) : (
-          <ChevronLeftIcon className="w-4 h-4 text-gray-600" />
+          <ChevronLeftIcon className={`w-4 h-4 ${isDark ? 'text-gray-300' : 'text-gray-600'}`} />
         )}
       </button>
 
@@ -190,8 +197,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Footer */}
       {!collapsed && (
-        <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-200">
-          <div className="text-xs text-gray-500">
+        <div className={`absolute bottom-0 left-0 right-0 p-4 border-t ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+          <div className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
             <div>Version 1.0.0</div>
             <div className="mt-1">© 2025 EmbeddedChat</div>
           </div>

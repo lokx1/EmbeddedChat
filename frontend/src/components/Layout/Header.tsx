@@ -1,11 +1,14 @@
 // Enhanced header component with notifications and workspace controls
 import React from 'react';
+import { useTheme } from '../../contexts/ThemeContext';
 import { 
   BellIcon, 
   Cog6ToothIcon, 
   ChevronDownIcon,
   UserCircleIcon,
-  ArrowRightOnRectangleIcon
+  ArrowRightOnRectangleIcon,
+  SunIcon,
+  MoonIcon
 } from '@heroicons/react/24/outline';
 import { Button } from '../UI/Button';
 
@@ -24,8 +27,10 @@ export const Header: React.FC<HeaderProps> = ({
   onLogout, 
   currentWorkspace = "Main Workspace" 
 }) => {
+  const { isDark, toggleTheme } = useTheme();
+  
   return (
-    <header className="bg-white shadow-sm border-b border-gray-200 px-6 py-4">
+    <header className={`${isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} shadow-sm border-b px-6 py-4`}>
       <div className="flex items-center justify-between">
         {/* Left side - Logo and Workspace */}
         <div className="flex items-center space-x-6">
@@ -33,15 +38,15 @@ export const Header: React.FC<HeaderProps> = ({
             <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
               <span className="text-white font-bold text-sm">EC</span>
             </div>
-            <h1 className="text-xl font-semibold text-gray-800">
+            <h1 className={`text-xl font-semibold ${isDark ? 'text-white' : 'text-gray-800'}`}>
               EmbeddedChat
             </h1>
           </div>
           
           {/* Workspace Selector */}
-          <div className="flex items-center space-x-2 bg-gray-50 px-3 py-2 rounded-lg">
-            <span className="text-sm text-gray-600">Workspace:</span>
-            <button className="flex items-center space-x-1 text-sm font-medium text-gray-800 hover:text-blue-600">
+          <div className={`flex items-center space-x-2 ${isDark ? 'bg-gray-700' : 'bg-gray-50'} px-3 py-2 rounded-lg`}>
+            <span className={`text-sm ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Workspace:</span>
+            <button className={`flex items-center space-x-1 text-sm font-medium ${isDark ? 'text-gray-200 hover:text-blue-400' : 'text-gray-800 hover:text-blue-600'}`}>
               <span>{currentWorkspace}</span>
               <ChevronDownIcon className="w-4 h-4" />
             </button>
@@ -50,14 +55,23 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Right side - Actions and User */}
         <div className="flex items-center space-x-4">
+          {/* Dark Mode Toggle */}
+          <button 
+            onClick={toggleTheme}
+            className={`p-2 ${isDark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-700'} transition-colors`}
+            title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+          >
+            {isDark ? <SunIcon className="w-5 h-5" /> : <MoonIcon className="w-5 h-5" />}
+          </button>
+
           {/* Notifications */}
-          <button className="relative p-2 text-gray-400 hover:text-gray-600 transition-colors">
+          <button className={`relative p-2 ${isDark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-400 hover:text-gray-600'} transition-colors`}>
             <BellIcon className="w-5 h-5" />
             <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full"></span>
           </button>
 
           {/* Settings */}
-          <button className="p-2 text-gray-400 hover:text-gray-600 transition-colors">
+          <button className={`p-2 ${isDark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-400 hover:text-gray-600'} transition-colors`}>
             <Cog6ToothIcon className="w-5 h-5" />
           </button>
 

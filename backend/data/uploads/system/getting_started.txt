@@ -1,0 +1,25 @@
+Getting Started with EmbeddedChat
+
+Welcome to EmbeddedChat, an advanced chatbot platform with document processing capabilities.
+
+Key Features:
+- Real-time chat with AI assistance
+- Document upload and processing
+- Semantic search across documents
+- Vector-based retrieval augmented generation (RAG)
+- User authentication and session management
+
+To get started:
+1. Register an account or log in
+2. Upload your documents in the Documents section
+3. Start chatting and ask questions about your documents
+4. The AI will search your documents and provide contextual answers
+
+Supported document formats:
+- PDF files
+- Microsoft Word documents
+- Excel spreadsheets
+- Plain text files
+- CSV files
+
+The system automatically processes uploaded documents, extracts text content, and creates vector embeddings for semantic search.

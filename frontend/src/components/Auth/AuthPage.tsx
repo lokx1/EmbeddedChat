@@ -1,9 +1,9 @@
 // Main authentication component that handles login/register switching
 import React, { useState } from 'react';
-import { useAuth } from './AuthContext.tsx';
-import { LoginForm } from './LoginForm.tsx';
-import { RegisterForm, RegisterData } from './RegisterForm.tsx';
-import { Toast } from '../UI/Toast.tsx';
+import { useAuth } from './AuthContext';
+import { LoginForm } from './LoginForm';
+import { RegisterForm, RegisterData } from './RegisterForm';
+import { Toast } from '../UI/Toast';
 
 interface AuthPageProps {
   onAuthSuccess?: () => void;

@@ -1,218 +1,243 @@
-# Document routes
+# Document routes with RAG and vector store integration
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
 from typing import List, Optional
-import os
-import uuid
-from pathlib import Path
+from pydantic import BaseModel
 
-from src.models.database import get_db
-from src.models.user import User
-from src.models.document import Document, DocumentStatus
-from src.schemas.document import (
-    DocumentCreate, Document as DocumentSchema,
-    DocumentUpdate, DocumentList
-)
-from src.api.middleware.auth import get_current_active_user
-from src.core.config import settings
+from ...models.database import get_db
+from ...models.user import User
+from ...services.document.upload_service import upload_service
+from ...services.document.storage_service import storage_service
+from ...services.rag.retrieval_service import retrieval_service
+from ...services.rag.vector_store import vector_store
+from ...api.middleware.auth import get_current_active_user
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
-# Configure upload directory
-UPLOAD_DIR = Path("uploads")
-UPLOAD_DIR.mkdir(exist_ok=True)
+# Request/Response models
+class DocumentUploadResponse(BaseModel):
+    success: bool
+    document_id: int
+    filename: str
+    status: str
 
-ALLOWED_MIME_TYPES = {
-    "text/plain",
-    "text/markdown", 
-    "application/pdf",
-    "application/msword",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-}
+class DocumentResponse(BaseModel):
+    id: int
+    filename: str
+    size: int
+    status: str
+    uploaded_at: str
+    summary: Optional[str] = None
+    chunk_count: Optional[int] = None
 
-MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
+class SearchRequest(BaseModel):
+    query: str
+    max_results: int = 5
 
 
-@router.post("/upload", response_model=DocumentSchema, status_code=status.HTTP_201_CREATED)
+@router.post("/upload", response_model=DocumentUploadResponse, status_code=status.HTTP_201_CREATED)
 async def upload_document(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Upload a document"""
-    # Validate file type
-    if file.content_type not in ALLOWED_MIME_TYPES:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"File type {file.content_type} not allowed"
-        )
-    
-    # Read file content to check size
-    content = await file.read()
-    file_size = len(content)
-    
-    if file_size > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"File size {file_size} exceeds maximum allowed size {MAX_FILE_SIZE}"
-        )
-    
-    # Generate unique filename
-    file_extension = Path(file.filename).suffix
-    unique_filename = f"{uuid.uuid4()}{file_extension}"
-    file_path = UPLOAD_DIR / unique_filename
-    
-    # Save file
-    with open(file_path, "wb") as f:
-        f.write(content)
-    
-    # Create document record
-    document = Document(
-        filename=unique_filename,
-        original_filename=file.filename,
-        file_path=str(file_path),
-        file_size=file_size,
-        mime_type=file.content_type,
-        user_id=current_user.id,
-        status=DocumentStatus.UPLOADING
-    )
-    
-    db.add(document)
-    await db.commit()
-    await db.refresh(document)
-    
-    # TODO: Trigger document processing task
-    # For now, just mark as ready
-    document.status = DocumentStatus.READY
-    await db.commit()
-    
-    return document
-
-
-@router.get("/", response_model=DocumentList)
-async def get_documents(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(20, ge=1, le=100),
-    status: Optional[DocumentStatus] = None,
-    current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """Get user's documents"""
-    query = select(Document).where(Document.user_id == current_user.id)
-    
-    if status:
-        query = query.where(Document.status == status)
-    
-    # Get total count
-    count_result = await db.execute(
-        select(Document).where(Document.user_id == current_user.id)
-    )
-    total = len(count_result.scalars().all())
-    
-    # Get paginated results
-    result = await db.execute(query.offset(skip).limit(limit))
-    documents = result.scalars().all()
-    
-    return DocumentList(
-        documents=documents,
-        total=total,
-        page=skip // limit + 1,
-        size=limit
-    )
-
-
-@router.get("/{document_id}", response_model=DocumentSchema)
-async def get_document(
-    document_id: int,
-    current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """Get a specific document"""
-    result = await db.execute(
-        select(Document).where(
-            and_(
-                Document.id == document_id,
-                Document.user_id == current_user.id
+    """Upload and process a document with RAG integration"""
+    try:
+        # Validate file type
+        allowed_types = [
+            "application/pdf",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "text/plain",
+            "text/csv"
+        ]
+        
+        if file.content_type not in allowed_types:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"File type {file.content_type} not supported"
             )
+        
+        # Check file size (max 10MB)
+        content = await file.read()
+        if len(content) > 10 * 1024 * 1024:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="File size too large (max 10MB)"
+            )
+        
+        # Reset file position for upload service
+        await file.seek(0)
+        
+        result = await upload_service.upload_document(file, current_user.id, db)
+        
+        if not result["success"]:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=result["error"]
+            )
+        
+        return DocumentUploadResponse(
+            success=True,
+            document_id=result["document_id"],
+            filename=result["filename"],
+            status=result["status"]
         )
-    )
-    document = result.scalar_one_or_none()
-    
-    if not document:
+        
+    except HTTPException:
+        raise
+    except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Document not found"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
         )
-    
-    return document
 
 
-@router.put("/{document_id}", response_model=DocumentSchema)
-async def update_document(
-    document_id: int,
-    document_data: DocumentUpdate,
+@router.get("/", response_model=List[DocumentResponse])
+async def get_user_documents(
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Update a document"""
-    result = await db.execute(
-        select(Document).where(
-            and_(
-                Document.id == document_id,
-                Document.user_id == current_user.id
-            )
-        )
-    )
-    document = result.scalar_one_or_none()
-    
-    if not document:
+    """Get all documents for the current user"""
+    try:
+        documents = await upload_service.get_user_documents(current_user.id, db)
+        return [DocumentResponse(**doc) for doc in documents]
+        
+    except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Document not found"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
         )
-    
-    # Update fields
-    for field, value in document_data.model_dump(exclude_unset=True).items():
-        setattr(document, field, value)
-    
-    await db.commit()
-    await db.refresh(document)
-    
-    return document
 
 
-@router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{document_id}")
 async def delete_document(
     document_id: int,
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Delete a document"""
-    result = await db.execute(
-        select(Document).where(
-            and_(
-                Document.id == document_id,
-                Document.user_id == current_user.id
-            )
-        )
-    )
-    document = result.scalar_one_or_none()
-    
-    if not document:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Document not found"
-        )
-    
-    # Delete file from filesystem
+    """Delete a document and its vector embeddings"""
     try:
-        if os.path.exists(document.file_path):
-            os.remove(document.file_path)
+        result = await upload_service.delete_document(document_id, current_user.id, db)
+        
+        if not result["success"]:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=result["error"]
+            )
+        
+        return {"message": "Document deleted successfully"}
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        # Log error but don't fail the request
-        print(f"Error deleting file {document.file_path}: {e}")
-    
-    # Delete from database
-    await db.delete(document)
-    await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@router.post("/search")
+async def search_documents(
+    request: SearchRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Search documents using semantic search"""
+    try:
+        result = await retrieval_service.search_documents(
+            request.query, current_user.id, db, request.max_results
+        )
+        
+        if not result["success"]:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=result["error"]
+            )
+        
+        return {
+            "results": result["results"],
+            "context": result["context"],
+            "total_chunks": result["total_chunks"]
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@router.get("/{document_id}/context")
+async def get_document_context(
+    document_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get all chunks from a specific document"""
+    try:
+        result = await retrieval_service.get_document_context(
+            document_id, current_user.id, db
+        )
+        
+        if not result["success"]:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=result["error"]
+            )
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@router.get("/{document_id}/related")
+async def get_related_documents(
+    document_id: int,
+    max_results: int = Query(3, ge=1, le=10),
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get documents related to the specified document"""
+    try:
+        related = await retrieval_service.get_related_documents(
+            document_id, current_user.id, db, max_results
+        )
+        
+        return {"related_documents": related}
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@router.get("/stats")
+async def get_document_stats(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get document storage statistics"""
+    try:
+        stats = await storage_service.get_storage_stats(db)
+        vector_stats = await vector_store.get_collection_stats()
+        
+        return {
+            **stats,
+            "vector_store": vector_stats
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
