@@ -4,6 +4,7 @@ import { Dashboard } from '../Dashboard/Dashboard';
 import { useAuth } from '../Auth/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { Toggle } from '../UI/Toggle';
+import { WorkflowEditor } from '../Workflow/WorkflowEditor';
 import { 
   SunIcon, 
   MoonIcon,
@@ -31,11 +32,14 @@ const DocumentModule = () => (
 );
 
 const WorkflowModule = () => (
-  <div className="p-6">
-    <h2 className="text-2xl font-bold text-gray-900 mb-4">Workflow Designer</h2>
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-      <p className="text-gray-600">n8n-style workflow designer will be implemented here.</p>
-    </div>
+  <div style={{ 
+    height: 'calc(100vh - 64px)', // Trừ đi height của header
+    width: '100%',
+    overflow: 'hidden'
+  }}>
+    <WorkflowEditor onSave={(nodes, edges) => {
+      console.log('Saving workflow:', { nodes, edges });
+    }} />
   </div>
 );
 
@@ -276,7 +280,7 @@ export const WorkspaceManager: React.FC = () => {
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-auto">
+        <div className={`flex-1 ${activeModule === 'workflows' ? '' : 'overflow-auto'}`}>
           {renderModule()}
         </div>
       </div>
