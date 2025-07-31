@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import ReactFlow, {
   MiniMap,
   Controls,
@@ -13,6 +13,11 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { useTheme } from '../../contexts/ThemeContext';
+import { 
+  useWorkflowInstances, 
+  useWorkflowInstance,
+  useBackendHealth 
+} from '../../hooks/useWorkflow';
 
 import WorkflowNode from './WorkflowNode';
 import WorkflowToolbar from './WorkflowToolbar';

@@ -4,7 +4,8 @@ import { Dashboard } from '../Dashboard/Dashboard';
 import { useAuth } from '../Auth/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { Toggle } from '../UI/Toggle';
-import { WorkflowEditor } from '../Workflow/WorkflowEditor';
+import { WorkflowEditor } from '../WorkflowEditor/WorkflowEditor';
+import { WorkflowDashboard } from '../WorkflowEditor/WorkflowDashboard';
 import { 
   SunIcon, 
   MoonIcon,
@@ -31,17 +32,37 @@ const DocumentModule = () => (
   </div>
 );
 
-const WorkflowModule = () => (
-  <div style={{ 
-    height: 'calc(100vh - 64px)', // Trừ đi height của header
-    width: '100%',
-    overflow: 'hidden'
-  }}>
-    <WorkflowEditor onSave={(nodes, edges) => {
-      console.log('Saving workflow:', { nodes, edges });
-    }} />
-  </div>
-);
+const WorkflowModule = () => {
+  const [workflowView, setWorkflowView] = useState<'dashboard' | 'editor'>('dashboard');
+
+  if (workflowView === 'editor') {
+    return (
+      <div style={{ 
+        height: 'calc(100vh - 64px)', // Trừ đi height của header
+        width: '100%',
+        overflow: 'hidden'
+      }}>
+        <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+          <button
+            onClick={() => setWorkflowView('dashboard')}
+            className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+          >
+            ← Back to Dashboard
+          </button>
+        </div>
+        <WorkflowEditor 
+          onBack={() => setWorkflowView('dashboard')}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full">
+      <WorkflowDashboard onOpenEditor={() => setWorkflowView('editor')} />
+    </div>
+  );
+};
 
 const MCPModule = () => (
   <div className="p-6">

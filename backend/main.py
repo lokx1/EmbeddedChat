@@ -7,7 +7,7 @@ import asyncio
 from src.core.config import settings
 from src.api.middleware.cors import add_cors_middleware
 from src.api.middleware.rate_limiting import add_rate_limit_middleware
-from src.api.routes import health, chat, documents, auth, dashboard
+from src.api.routes import health, chat, documents, auth, dashboard, workflow
 from src.models.database import engine
 from src.models import user, conversation, message, document
 
@@ -60,6 +60,7 @@ def create_application() -> FastAPI:
     app.include_router(chat.router, prefix=settings.API_V1_STR)
     app.include_router(documents.router, prefix=settings.API_V1_STR)
     app.include_router(dashboard.router, prefix=f"{settings.API_V1_STR}/dashboard")
+    app.include_router(workflow.router, prefix=settings.API_V1_STR)
     
     # Include routers without prefix for backward compatibility
     app.include_router(health.router, tags=["health-v0"])
