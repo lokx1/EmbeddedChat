@@ -35,6 +35,7 @@ const DocumentModule = () => (
 
 const WorkflowModule = () => {
   const [workflowView, setWorkflowView] = useState<'dashboard' | 'editor' | 'enhanced-editor'>('dashboard');
+  const [templateToLoad, setTemplateToLoad] = useState<string | null>(null);
 
   if (workflowView === 'editor') {
     return (
@@ -47,7 +48,11 @@ const WorkflowModule = () => {
   if (workflowView === 'enhanced-editor') {
     return (
       <EnhancedWorkflowEditor 
-        onBack={() => setWorkflowView('dashboard')}
+        onBack={() => {
+          setWorkflowView('dashboard');
+          setTemplateToLoad(null); // Clear template when going back
+        }}
+        workflowId={templateToLoad || undefined}
       />
     );
   }
@@ -55,6 +60,11 @@ const WorkflowModule = () => {
   return (
     <WorkflowDashboard 
       onOpenEditor={() => setWorkflowView('enhanced-editor')}
+      onLoadTemplate={(templateId: string) => {
+        console.log('WorkspaceManager onLoadTemplate called with:', templateId);
+        setTemplateToLoad(templateId);
+        setWorkflowView('enhanced-editor');
+      }}
     />
   );
 };

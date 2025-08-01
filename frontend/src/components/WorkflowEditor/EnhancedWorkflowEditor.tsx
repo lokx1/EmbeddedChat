@@ -15,6 +15,7 @@ import ReactFlow, {
   MiniMap,
   ReactFlowProvider,
   ReactFlowInstance,
+  ConnectionMode,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
@@ -78,7 +79,9 @@ function EnhancedWorkflowEditorInner({ workflowId, onBack }: EnhancedWorkflowEdi
 
   // Load workflow if workflowId is provided
   useEffect(() => {
+    console.log('EnhancedWorkflowEditor useEffect - workflowId:', workflowId);
     if (workflowId) {
+      console.log('Loading workflow with ID:', workflowId);
       loadWorkflow(workflowId);
     }
   }, [workflowId, loadWorkflow]);
@@ -126,7 +129,11 @@ function EnhancedWorkflowEditorInner({ workflowId, onBack }: EnhancedWorkflowEdi
   }, [nodes, edges, workflowName, workflowDescription]);
 
   const onConnect = useCallback(
-    (params: Edge | Connection) => setEdges((eds) => addEdge(params, eds)),
+    (params: Edge | Connection) => {
+      console.log('Connection attempt:', params);
+      setEdges((eds) => addEdge(params, eds));
+      setIsModified(true);
+    },
     [setEdges]
   );
 
@@ -263,17 +270,50 @@ function EnhancedWorkflowEditorInner({ workflowId, onBack }: EnhancedWorkflowEdi
       return;
     }
 
-    // Create a new instance for execution (this would normally create via API)
-    // For now, we'll use a placeholder instance ID
-    const newInstanceId = `instance_${Date.now()}`;
-    setCurrentInstanceId(newInstanceId);
-    setExecutionPanelOpen(true);
+    try {
+      // Create a real instance for execution
+      const workflowData = convertReactFlowData(nodes, edges, viewport);
+      const instanceData = {
+        name: `${workflowName} - Execution ${new Date().toLocaleTimeString()}`,
+        template_id: currentWorkflow.id,
+        workflow_data: workflowData,
+        input_data: {},
+        created_by: 'frontend_user'
+      };
 
-    // Execute the workflow
-    const result = await executeWorkflow(newInstanceId, {});
-    
-    if (!result.success) {
-      alert(`Failed to execute workflow: ${result.error}`);
+      // Use the createInstance function from useWorkflowEditor hook
+      const createInstanceResponse = await fetch('http://localhost:8000/api/v1/workflow/instances', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(instanceData)
+      });
+
+      if (!createInstanceResponse.ok) {
+        throw new Error(`Failed to create instance: ${createInstanceResponse.status}`);
+      }
+
+      const instanceResult = await createInstanceResponse.json();
+      const newInstanceId = instanceResult.instance_id;
+
+      if (!newInstanceId) {
+        throw new Error('No instance ID returned from server');
+      }
+
+      console.log('Created instance:', newInstanceId);
+      setCurrentInstanceId(newInstanceId);
+      setExecutionPanelOpen(true);
+
+      // Execute the workflow with real instance ID
+      const result = await executeWorkflow(newInstanceId, {});
+      
+      if (!result.success) {
+        alert(`Failed to execute workflow: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('Execution error:', error);
+      alert(`Failed to execute workflow: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }, [currentWorkflow, isModified, handleSave, nodes, edges, viewport, workflowName, convertReactFlowData, executeWorkflow]);
 
@@ -436,6 +476,9 @@ function EnhancedWorkflowEditorInner({ workflowId, onBack }: EnhancedWorkflowEdi
             nodeTypes={nodeTypes}
             className={isDark ? 'dark' : ''}
             fitView
+            snapToGrid={true}
+            snapGrid={[20, 20]}
+            connectionMode={ConnectionMode.Loose}
           >
             <Controls />
             <MiniMap />

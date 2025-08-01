@@ -5,19 +5,21 @@
 import React, { useState, useEffect } from 'react';
 import { 
   useWorkflowInstances, 
-  useWorkflowTemplates,
   useTaskLogs,
   useAnalytics,
   useBackendHealth,
   useGoogleSheets
 } from '../../hooks/useWorkflow';
+import { useWorkflowEditor } from '../../hooks/useEnhancedWorkflow';
+import { WorkflowTemplate } from '../../services/enhancedWorkflowEditorApi';
 // import { WorkflowInstance } from '../../services/workflowApi';
 
 interface WorkflowDashboardProps {
   onOpenEditor?: () => void;
+  onLoadTemplate?: (templateId: string) => void;
 }
 
-export const WorkflowDashboard: React.FC<WorkflowDashboardProps> = ({ onOpenEditor }) => {
+export const WorkflowDashboard: React.FC<WorkflowDashboardProps> = ({ onOpenEditor, onLoadTemplate }) => {
   const [activeTab, setActiveTab] = useState<'instances' | 'templates' | 'logs' | 'analytics' | 'sheets'>('instances');
   // const [selectedInstance, setSelectedInstance] = useState<WorkflowInstance | null>(null);
 
@@ -32,10 +34,8 @@ export const WorkflowDashboard: React.FC<WorkflowDashboardProps> = ({ onOpenEdit
     executeInstance 
   } = useWorkflowInstances();
   
-  const {
-    templates,
-    fetchTemplates
-  } = useWorkflowTemplates();
+  // Use workflow editor hook for templates
+  const { availableWorkflows: templates, loading: templatesLoading, error: templatesError, fetchAvailableWorkflows: fetchTemplates } = useWorkflowEditor();
 
   const {
     logs,
@@ -315,6 +315,111 @@ export const WorkflowDashboard: React.FC<WorkflowDashboardProps> = ({ onOpenEdit
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'templates' && (
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                Workflow Templates
+              </h2>
+              <button
+                onClick={onOpenEditor}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Create New Template
+              </button>
+            </div>
+
+            {/* Templates Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {templates.map((template: WorkflowTemplate) => (
+                <div
+                  key={template.id}
+                  className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border border-gray-200 dark:border-gray-700"
+                >
+                  <div className="flex justify-between items-start mb-4">
+                    <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+                      {template.name}
+                    </h3>
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                      (template as any).is_public 
+                        ? 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100'
+                        : 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100'
+                    }`}>
+                      {(template as any).is_public ? 'Public' : 'Private'}
+                    </span>
+                  </div>
+                  
+                  <p className="text-gray-600 dark:text-gray-400 text-sm mb-4">
+                    {template.description || 'No description provided'}
+                  </p>
+                  
+                  <div className="flex justify-between items-center text-sm text-gray-500 dark:text-gray-400 mb-4">
+                    <span>Category: {(template as any).category || 'General'}</span>
+                    <span>
+                      {template.created_at ? new Date(template.created_at).toLocaleDateString() : 'Unknown'}
+                    </span>
+                  </div>
+                  
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={() => {
+                        // Load template in editor
+                        console.log('Edit button clicked for template:', template.id);
+                        if (onLoadTemplate) {
+                          console.log('Calling onLoadTemplate with ID:', template.id);
+                          onLoadTemplate(template.id);
+                        } else if (onOpenEditor) {
+                          // Fallback to just opening editor
+                          console.log('Falling back to onOpenEditor');
+                          onOpenEditor();
+                        } else {
+                          console.log('No onLoadTemplate or onOpenEditor available');
+                        }
+                      }}
+                      className="flex-1 bg-blue-600 text-white px-3 py-2 rounded hover:bg-blue-700 text-sm transition-colors"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={async () => {
+                        // Create instance from template
+                        const result = await createInstance({
+                          name: `${template.name} - Instance`,
+                          template_id: template.id,
+                          workflow_data: template.workflow_data
+                        });
+                        if (result.success) {
+                          alert('Instance created successfully!');
+                          fetchInstances(); // Refresh instances
+                        } else {
+                          alert(`Failed to create instance: ${result.error}`);
+                        }
+                      }}
+                      className="flex-1 bg-green-600 text-white px-3 py-2 rounded hover:bg-green-700 text-sm transition-colors"
+                    >
+                      Use Template
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {templates.length === 0 && (
+              <div className="text-center py-12">
+                <div className="text-gray-500 dark:text-gray-400 mb-4">
+                  No workflow templates found
+                </div>
+                <button
+                  onClick={onOpenEditor}
+                  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Create Your First Template
+                </button>
               </div>
             )}
           </div>

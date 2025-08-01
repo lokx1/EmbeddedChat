@@ -21,7 +21,9 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   subtitle, 
   color, 
   bgColor 
-}) => (
+}) => {
+  console.log('BaseNode rendered:', { title, selected, data });
+  return (
   <div className={`relative rounded-lg border-2 min-w-[160px] shadow-sm transition-all duration-200 ${
     selected 
       ? 'border-blue-500 shadow-lg transform scale-105' 
@@ -33,6 +35,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
       type="target" 
       position={Position.Top} 
       className="w-3 h-3 !bg-gray-400 !border-2 !border-white hover:!bg-gray-600 transition-colors"
+      style={{ top: -6 }}
     />
     
     <div className="p-3">
@@ -60,9 +63,11 @@ const BaseNode: React.FC<BaseNodeProps> = ({
       type="source" 
       position={Position.Bottom} 
       className="w-3 h-3 !bg-gray-400 !border-2 !border-white hover:!bg-gray-600 transition-colors"
+      style={{ bottom: -6 }}
     />
   </div>
-);
+  );
+};
 
 // Start Node
 export const StartNode = (props: NodeProps) => (
@@ -258,33 +263,41 @@ export const EndNode = (props: NodeProps) => (
 
 // Node Types mapping - Updated to match backend component types
 export const nodeTypes = {
-  // Triggers
+  // Backend component types (primary)
   manual_trigger: StartNode,
   webhook: WebhookNode,
-  schedule: ScheduleNode,
-  
-  // Data Sources  
   http_request: APINode,
   google_sheets: GoogleSheetsNode,
-  database: DatabaseNode,
-  
-  // AI Processing
   ai_processing: AIProcessingNode,
   data_transform: TransformNode,
+  email_sender: NotificationNode,
+  database_write: DatabaseNode,
   
-  // Control Flow
+  // Additional triggers
+  schedule: ScheduleNode,
+  
+  // Additional data sources
+  database: DatabaseNode,
+  
+  // Additional control flow
   filter: FilterNode,
   condition: ConditionNode,
   delay: DelayNode,
   loop: LoopNode,
   
-  // Output Actions
-  email_sender: NotificationNode,
-  database_write: DatabaseNode,
+  // Additional output actions
   drive: GoogleDriveNode,
   analytics: AnalyticsNode,
   
-  // Legacy/Fallback
+  // Legacy/Compatibility mappings
+  httpTrigger: WebhookNode,
+  googleSheets: GoogleSheetsNode,
   start: StartNode,
   end: EndNode,
+  input: StartNode,
+  ai: AIProcessingNode,
+  output: EndNode,
+  sheets: GoogleSheetsNode,
+  transform: TransformNode,
+  pdf: EndNode,
 };

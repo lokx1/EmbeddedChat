@@ -928,10 +928,10 @@ async def load_workflow(
                 "name": template.name,
                 "description": template.description,
                 "category": template.category,
-                "workflow_data": template.workflow_data,
+                "workflow_data": template.template_data,  # Fixed: use template_data field
                 "is_public": template.is_public,
                 "created_at": template.created_at.isoformat(),
-                "updated_at": template.updated_at.isoformat()
+                "updated_at": template.updated_at.isoformat() if template.updated_at else None
             }
         }
         

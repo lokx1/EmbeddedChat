@@ -111,6 +111,20 @@ export interface WorkflowInstance {
   created_by?: string;
 }
 
+// Template interface (different from instance)
+export interface WorkflowTemplate {
+  id: string;
+  name: string;
+  description?: string;
+  category?: string;
+  is_public?: boolean;
+  template_data?: WorkflowEditorData;
+  workflow_data?: WorkflowEditorData; // Alias for backward compatibility
+  created_at: string;
+  updated_at?: string;
+  created_by?: string;
+}
+
 // API Response types
 export interface ApiResponse<T> {
   success: boolean;

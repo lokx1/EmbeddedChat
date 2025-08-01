@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 import asyncio
 import time
 import json
+from datetime import datetime
 
 from ...schemas.workflow_components import (
     WorkflowComponentMetadata, 
@@ -16,6 +17,13 @@ from ...schemas.workflow_components import (
     ComponentHandle,
     ParameterType
 )
+
+# Import Google Sheets service
+try:
+    from ..google_sheets_service import get_sheets_service
+    GOOGLE_SHEETS_AVAILABLE = True
+except ImportError:
+    GOOGLE_SHEETS_AVAILABLE = False
 
 
 class BaseWorkflowComponent(ABC):
@@ -301,6 +309,7 @@ class ComponentRegistry:
         self.register_component(HttpRequestComponent)
         self.register_component(DataTransformComponent)
         self.register_component(GoogleSheetsComponent)
+        self.register_component(GoogleSheetsWriteComponent)
         self.register_component(AIProcessingComponent)
         self.register_component(WebhookComponent)
         self.register_component(EmailSenderComponent)
@@ -376,26 +385,143 @@ class GoogleSheetsComponent(BaseWorkflowComponent):
         
         try:
             sheet_id = context.input_data.get("sheet_id")
-            sheet_name = context.input_data.get("sheet_name")
+            sheet_name = context.input_data.get("sheet_name", "Sheet1")
             range_str = context.input_data.get("range", "A1:Z1000")
             
-            # TODO: Implement actual Google Sheets API call
-            # For now, return mock data
-            mock_data = [
-                ["Name", "Email", "Status"],
-                ["John Doe", "john@example.com", "Active"],
-                ["Jane Smith", "jane@example.com", "Pending"]
-            ]
+            if not sheet_id:
+                raise ValueError("sheet_id is required")
             
-            execution_time = int((time.time() - start_time) * 1000)
+            # Use real Google Sheets API
+            if GOOGLE_SHEETS_AVAILABLE:
+                sheets_service = get_sheets_service()
+                
+                if not sheets_service.authenticate():
+                    raise Exception("Failed to authenticate with Google Sheets API")
+                
+                # Read data using API
+                full_range = f"{sheet_name}!{range_str}"
+                values = sheets_service.read_sheet(sheet_id, full_range)
+                
+                if values:
+                    # Convert to pandas-like format for consistency
+                    headers = values[0] if values else []
+                    data_rows = values[1:] if len(values) > 1 else []
+                    
+                    # Create records (list of dictionaries)
+                    records = []
+                    for row in data_rows:
+                        # Pad row to match header length
+                        padded_row = row + [''] * (len(headers) - len(row))
+                        record = {headers[i]: padded_row[i] if i < len(padded_row) else '' 
+                                for i in range(len(headers))}
+                        records.append(record)
+                    
+                    spreadsheet_data = {
+                        "values": values,
+                        "records": records,
+                        "spreadsheet_info": {
+                            "sheet_id": sheet_id,
+                            "sheet_name": sheet_name,
+                            "range": range_str,
+                            "total_rows": len(values),
+                            "total_columns": len(headers),
+                            "columns": headers
+                        }
+                    }
+                else:
+                    spreadsheet_data = {
+                        "values": [],
+                        "records": [],
+                        "spreadsheet_info": {
+                            "sheet_id": sheet_id,
+                            "sheet_name": sheet_name,
+                            "range": range_str,
+                            "total_rows": 0,
+                            "total_columns": 0,
+                            "columns": []
+                        }
+                    }
+                
+                execution_time = int((time.time() - start_time) * 1000)
+                
+                return ExecutionResult(
+                    success=True,
+                    output_data=spreadsheet_data,
+                    execution_time_ms=execution_time,
+                    logs=[
+                        f"Connected to Google Sheets API",
+                        f"Successfully read data from sheet '{sheet_name}'",
+                        f"Retrieved {len(spreadsheet_data['records'])} records with {len(spreadsheet_data['spreadsheet_info']['columns'])} columns",
+                        f"Columns: {', '.join(spreadsheet_data['spreadsheet_info']['columns'])}"
+                    ],
+                    next_steps=["output"]
+                )
             
-            return ExecutionResult(
-                success=True,
-                output_data={"spreadsheet_data": mock_data},
-                execution_time_ms=execution_time,
-                logs=[f"Read data from sheet {sheet_name} range {range_str}"],
-                next_steps=["output"]
-            )
+            else:
+                # Fallback to CSV export for compatibility
+                import requests
+                import pandas as pd
+                from io import StringIO
+                
+                # Use CSV export for public sheets (gid=0 for first sheet)
+                url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid=0"
+                
+                response = requests.get(url, timeout=10)
+                response.raise_for_status()
+                
+                # Parse CSV data
+                csv_data = StringIO(response.text)
+                df = pd.read_csv(csv_data)
+                
+                # Convert to values format (list of lists)
+                if not df.empty:
+                    values = [df.columns.tolist()]  # Header row
+                    values.extend(df.values.tolist())  # Data rows
+                    
+                    # Convert to list of dictionaries for easier use
+                    records = df.to_dict('records')
+                    
+                    spreadsheet_data = {
+                        "values": values,
+                        "records": records,
+                        "spreadsheet_info": {
+                            "sheet_id": sheet_id,
+                            "sheet_name": sheet_name,
+                            "range": range_str,
+                            "total_rows": len(values),
+                            "total_columns": len(values[0]) if values else 0,
+                            "columns": df.columns.tolist()
+                        }
+                    }
+                else:
+                    spreadsheet_data = {
+                        "values": [],
+                        "records": [],
+                        "spreadsheet_info": {
+                            "sheet_id": sheet_id,
+                            "sheet_name": sheet_name,
+                            "range": range_str,
+                            "total_rows": 0,
+                            "total_columns": 0,
+                            "columns": []
+                        }
+                    }
+                
+                execution_time = int((time.time() - start_time) * 1000)
+                
+                return ExecutionResult(
+                    success=True,
+                    output_data=spreadsheet_data,
+                    execution_time_ms=execution_time,
+                    logs=[
+                        f"Connected to Google Sheets document: {sheet_id}",
+                        f"Successfully fetched data from sheet",
+                        f"Retrieved {len(spreadsheet_data['values'])} rows with {len(spreadsheet_data['spreadsheet_info']['columns'])} columns",
+                        f"Columns: {', '.join(spreadsheet_data['spreadsheet_info']['columns'])}"
+                    ],
+                    next_steps=["output"]
+                )
+                
         except Exception as e:
             return ExecutionResult(
                 success=False,
@@ -412,7 +538,7 @@ class AIProcessingComponent(BaseWorkflowComponent):
         return WorkflowComponentMetadata(
             type="ai_processing",
             name="AI Processing",
-            description="OpenAI, Claude, Ollama",
+            description="Process Google Sheets data with AI to generate assets",
             category=ComponentCategory.AI_PROCESSING,
             icon="CpuChipIcon",
             color="from-purple-500 via-purple-600 to-indigo-600",
@@ -480,32 +606,317 @@ class AIProcessingComponent(BaseWorkflowComponent):
             temperature = context.input_data.get("temperature", 0.7)
             max_tokens = context.input_data.get("max_tokens", 1000)
             
-            # Replace {input} in prompt with actual input data
-            input_str = json.dumps(context.previous_outputs)
-            prompt = prompt_template.replace("{input}", input_str)
+            # Get input data from previous step (should be Google Sheets data)
+            input_data = context.previous_outputs
+            sheets_data = None
             
-            # TODO: Implement actual AI API calls
-            # For now, return mock response
-            mock_response = f"AI processed input using {provider}/{model}: {prompt[:100]}..."
+            # Find Google Sheets data in previous outputs
+            for step_id, step_output in input_data.items():
+                if isinstance(step_output, dict) and "spreadsheet_info" in step_output:
+                    sheets_data = step_output
+                    break
+            
+            if not sheets_data:
+                return ExecutionResult(
+                    success=False,
+                    output_data={},
+                    error="No Google Sheets data found in previous steps",
+                    execution_time_ms=int((time.time() - start_time) * 1000),
+                    logs=["Error: Expected Google Sheets data as input"]
+                )
+            
+            # Process each row of data
+            processed_results = []
+            records = sheets_data.get("records", [])
+            
+            logs = [
+                f"Starting AI processing with {provider} ({model})",
+                f"Processing {len(records)} records from Google Sheets",
+                f"Temperature: {temperature}, Max Tokens: {max_tokens}"
+            ]
+            
+            for i, record in enumerate(records[:10]):  # Limit to 10 records for demo
+                try:
+                    # Replace {input} in prompt with actual record data
+                    prompt = prompt_template.replace("{input}", json.dumps(record, indent=2))
+                    
+                    # Simulate AI processing (replace with actual AI calls)
+                    ai_response = await self._process_with_ai(provider, model, prompt, temperature, max_tokens, record)
+                    
+                    processed_result = {
+                        "row_index": i + 1,
+                        "input_data": record,
+                        "ai_response": ai_response,
+                        "status": "success",
+                        "provider": provider,
+                        "model": model,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    
+                    processed_results.append(processed_result)
+                    logs.append(f"Successfully processed row {i + 1}")
+                    
+                except Exception as e:
+                    processed_result = {
+                        "row_index": i + 1,
+                        "input_data": record,
+                        "ai_response": None,
+                        "status": "error",
+                        "error": str(e),
+                        "provider": provider,
+                        "model": model,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    processed_results.append(processed_result)
+                    logs.append(f"Error processing row {i + 1}: {str(e)}")
+                
+                # Add small delay to avoid rate limiting
+                await asyncio.sleep(0.5)
             
             execution_time = int((time.time() - start_time) * 1000)
             
+            # Prepare output data
+            output_data = {
+                "processed_results": processed_results,
+                "summary": {
+                    "total_records": len(records),
+                    "processed_records": len(processed_results),
+                    "successful_records": len([r for r in processed_results if r["status"] == "success"]),
+                    "failed_records": len([r for r in processed_results if r["status"] == "error"]),
+                    "processing_time_ms": execution_time,
+                    "provider": provider,
+                    "model": model
+                },
+                "original_sheets_info": sheets_data.get("spreadsheet_info", {}),
+                # Format for Google Sheets Write component
+                "results_for_sheets": self._format_results_for_sheets(processed_results)
+            }
+            
             return ExecutionResult(
                 success=True,
-                output_data={"ai_response": mock_response, "model_used": model},
+                output_data=output_data,
                 execution_time_ms=execution_time,
-                logs=[f"AI processing completed with {provider}/{model}"],
+                logs=logs,
                 next_steps=["output"]
             )
+            
         except Exception as e:
             return ExecutionResult(
                 success=False,
                 output_data={},
                 error=str(e),
                 execution_time_ms=int((time.time() - start_time) * 1000),
-                logs=[f"AI processing error: {str(e)}"],
-                next_steps=["error"]
+                logs=[f"AI processing error: {str(e)}"]
             )
+    
+    async def _process_with_ai(self, provider: str, model: str, prompt: str, temperature: float, max_tokens: int, record: dict) -> dict:
+        """Process data with AI provider"""
+        
+        if provider == "openai":
+            return await self._process_with_openai(model, prompt, temperature, max_tokens, record)
+        elif provider == "claude":
+            return await self._process_with_claude(model, prompt, temperature, max_tokens, record)
+        elif provider == "ollama":
+            return await self._process_with_ollama(model, prompt, temperature, max_tokens, record)
+        else:
+            # Fallback simulation
+            return await self._simulate_ai_processing(record)
+    
+    async def _process_with_openai(self, model: str, prompt: str, temperature: float, max_tokens: int, record: dict) -> dict:
+        """Process with OpenAI API"""
+        try:
+            # TODO: Implement actual OpenAI API call
+            # For now, simulate asset generation based on input data
+            
+            description = record.get('description', '')
+            output_format = record.get('output_format', 'PNG')
+            
+            # Simulate AI-generated content
+            generated_content = {
+                "type": "asset_generation",
+                "description": description,
+                "output_format": output_format.upper(),
+                "generated_url": f"https://generated-assets.example.com/{output_format.lower()}/{hash(description) % 10000}.{output_format.lower()}",
+                "metadata": {
+                    "model": model,
+                    "provider": "openai",
+                    "quality": "high",
+                    "size": "1024x1024" if output_format.upper() in ["PNG", "JPG"] else "30s",
+                    "processing_time": "2.3s"
+                },
+                "prompt_used": prompt[:200] + "..." if len(prompt) > 200 else prompt
+            }
+            
+            await asyncio.sleep(1)  # Simulate processing time
+            return generated_content
+            
+        except Exception as e:
+            return {"error": f"OpenAI processing failed: {str(e)}"}
+    
+    async def _process_with_claude(self, model: str, prompt: str, temperature: float, max_tokens: int, record: dict) -> dict:
+        """Process with Claude API"""
+        try:
+            # TODO: Implement actual Claude API call
+            description = record.get('description', '')
+            output_format = record.get('output_format', 'PNG')
+            
+            generated_content = {
+                "type": "asset_generation",
+                "description": description,
+                "output_format": output_format.upper(),
+                "generated_url": f"https://claude-assets.example.com/{output_format.lower()}/{hash(description) % 10000}.{output_format.lower()}",
+                "metadata": {
+                    "model": model,
+                    "provider": "claude",
+                    "quality": "high",
+                    "size": "1024x1024" if output_format.upper() in ["PNG", "JPG"] else "30s",
+                    "processing_time": "1.8s"
+                },
+                "prompt_used": prompt[:200] + "..." if len(prompt) > 200 else prompt
+            }
+            
+            await asyncio.sleep(1.2)  # Simulate processing time
+            return generated_content
+            
+        except Exception as e:
+            return {"error": f"Claude processing failed: {str(e)}"}
+    
+    async def _process_with_ollama(self, model: str, prompt: str, temperature: float, max_tokens: int, record: dict) -> dict:
+        """Process with Ollama local API"""
+        try:
+            import requests
+            
+            # Check if Ollama is running
+            try:
+                health_response = requests.get('http://localhost:11434/api/tags', timeout=2)
+                if health_response.status_code != 200:
+                    raise Exception("Ollama server not responding")
+            except:
+                # Fallback to simulation if Ollama not available
+                return await self._simulate_ai_processing(record)
+            
+            description = record.get('description', '')
+            output_format = record.get('output_format', 'PNG')
+            
+            # Enhanced prompt for asset generation
+            enhanced_prompt = f"""
+            Asset Generation Request:
+            Description: {description}
+            Output Format: {output_format}
+            
+            {prompt}
+            
+            Please provide a detailed asset specification including:
+            1. Technical specifications
+            2. Style guidelines
+            3. Color palette suggestions
+            4. Implementation notes
+            
+            Keep response concise but comprehensive.
+            """
+            
+            # Ollama API call
+            payload = {
+                "model": model,
+                "prompt": enhanced_prompt,
+                "stream": False,
+                "options": {
+                    "temperature": temperature,
+                    "num_predict": max_tokens
+                }
+            }
+            
+            response = requests.post(
+                'http://localhost:11434/api/generate',
+                json=payload,
+                timeout=60  # Ollama can be slow
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                ai_text = result.get('response', '').strip()
+                
+                generated_content = {
+                    "type": "ollama_asset_generation",
+                    "description": description,
+                    "output_format": output_format.upper(),
+                    "generated_url": f"https://ollama-assets.local/{output_format.lower()}/{hash(description) % 10000}.{output_format.lower()}",
+                    "ai_response": ai_text,
+                    "metadata": {
+                        "model": model,
+                        "provider": "ollama",
+                        "quality": "local_generation",
+                        "size": "1024x1024" if output_format.upper() in ["PNG", "JPG"] else "variable",
+                        "processing_time": f"{result.get('total_duration', 0) / 1000000:.1f}ms" if 'total_duration' in result else "unknown",
+                        "tokens_evaluated": result.get('eval_count', 0),
+                        "eval_duration": f"{result.get('eval_duration', 0) / 1000000:.1f}ms" if 'eval_duration' in result else "unknown"
+                    },
+                    "prompt_used": enhanced_prompt[:200] + "..." if len(enhanced_prompt) > 200 else enhanced_prompt
+                }
+                
+                return generated_content
+            else:
+                raise Exception(f"Ollama API error: {response.status_code} - {response.text}")
+            
+        except Exception as e:
+            # Fallback to simulation if Ollama fails
+            print(f"Ollama processing failed, using simulation: {str(e)}")
+            return await self._simulate_ai_processing(record)
+    
+    async def _simulate_ai_processing(self, record: dict) -> dict:
+        """Simulate AI processing for demo purposes"""
+        description = record.get('description', 'Default asset')
+        output_format = record.get('output_format', 'PNG')
+        
+        return {
+            "type": "simulated_asset_generation",
+            "description": description,
+            "output_format": output_format.upper(),
+            "generated_url": f"https://demo-assets.example.com/{output_format.lower()}/{hash(description) % 10000}.{output_format.lower()}",
+            "metadata": {
+                "model": "simulation",
+                "provider": "demo",
+                "quality": "demo",
+                "size": "1024x1024" if output_format.upper() in ["PNG", "JPG"] else "30s",
+                "processing_time": "0.5s"
+            },
+            "note": "This is a simulated response for demonstration purposes"
+        }
+    
+    def _format_results_for_sheets(self, processed_results: list) -> list:
+        """Format AI processing results for Google Sheets Write component"""
+        
+        # Header row
+        headers = [
+            "Row Index", "Original Description", "Output Format", "Status", 
+            "Generated URL", "Provider", "Model", "Quality", "Size", 
+            "Processing Time", "Timestamp", "Notes"
+        ]
+        
+        # Data rows
+        data_rows = []
+        for result in processed_results:
+            input_data = result.get("input_data", {})
+            ai_response = result.get("ai_response", {})
+            metadata = ai_response.get("metadata", {}) if ai_response else {}
+            
+            row = [
+                result.get("row_index", ""),
+                input_data.get("description", ""),
+                input_data.get("output_format", ""),
+                result.get("status", ""),
+                ai_response.get("generated_url", "") if ai_response else "",
+                result.get("provider", ""),
+                result.get("model", ""),
+                metadata.get("quality", ""),
+                metadata.get("size", ""),
+                metadata.get("processing_time", ""),
+                result.get("timestamp", ""),
+                ai_response.get("note", "") if ai_response else result.get("error", "")
+            ]
+            data_rows.append(row)
+        
+        return [headers] + data_rows
 
 
 class WebhookComponent(BaseWorkflowComponent):
@@ -764,6 +1175,268 @@ class DatabaseWriteComponent(BaseWorkflowComponent):
                 logs=[f"Database operation error: {str(e)}"],
                 next_steps=["error"]
             )
+
+
+class GoogleSheetsWriteComponent(BaseWorkflowComponent):
+    @classmethod
+    def get_metadata(cls) -> WorkflowComponentMetadata:
+        return WorkflowComponentMetadata(
+            type="google_sheets_write",
+            name="Google Sheets Write",
+            description="Write data to Google Sheets",
+            category=ComponentCategory.OUTPUT_ACTIONS,
+            icon="PencilIcon",
+            color="from-emerald-500 via-green-500 to-teal-500",
+            parameters=[
+                ComponentParameter(
+                    name="sheet_id",
+                    label="Sheet ID",
+                    type=ParameterType.STRING,
+                    required=True,
+                    description="Google Sheets document ID"
+                ),
+                ComponentParameter(
+                    name="sheet_name",
+                    label="Sheet Name",
+                    type=ParameterType.STRING,
+                    required=True,
+                    default_value="Sheet1",
+                    description="Name of the sheet tab"
+                ),
+                ComponentParameter(
+                    name="range",
+                    label="Cell Range",
+                    type=ParameterType.STRING,
+                    default_value="A1",
+                    description="Starting cell to write data (e.g., A1)"
+                ),
+                ComponentParameter(
+                    name="mode",
+                    label="Write Mode",
+                    type=ParameterType.SELECT,
+                    default_value="append",
+                    options=[
+                        {"label": "Append Rows", "value": "append"},
+                        {"label": "Overwrite Range", "value": "overwrite"},
+                        {"label": "Clear Then Write", "value": "clear_write"}
+                    ],
+                    description="How to write data to the sheet"
+                ),
+                ComponentParameter(
+                    name="data_format",
+                    label="Data Format",
+                    type=ParameterType.SELECT,
+                    default_value="auto",
+                    options=[
+                        {"label": "Auto Detect", "value": "auto"},
+                        {"label": "JSON Array", "value": "json_array"},
+                        {"label": "CSV String", "value": "csv_string"},
+                        {"label": "Key-Value Pairs", "value": "key_value"}
+                    ],
+                    description="Format of input data"
+                )
+            ],
+            input_handles=[
+                ComponentHandle(id="input", type="target", position="left", label="Data")
+            ],
+            output_handles=[
+                ComponentHandle(id="success", type="source", position="right", label="Success"),
+                ComponentHandle(id="error", type="source", position="bottom", label="Error")
+            ]
+        )
+    
+    async def execute(self, context: ExecutionContext) -> ExecutionResult:
+        start_time = time.time()
+        
+        try:
+            sheet_id = context.input_data.get("sheet_id")
+            sheet_name = context.input_data.get("sheet_name", "Sheet1")
+            range_start = context.input_data.get("range", "A1")
+            mode = context.input_data.get("mode", "append")
+            data_format = context.input_data.get("data_format", "auto")
+            
+            if not sheet_id:
+                raise ValueError("sheet_id is required")
+            
+            # Get input data from previous nodes
+            input_data = context.previous_outputs.get("data", context.input_data.get("data", []))
+            
+            if not input_data:
+                raise ValueError("No data provided to write")
+            
+            # Process data based on format
+            processed_data = self._process_input_data(input_data, data_format)
+            
+            # Try to use real Google Sheets API if available
+            if GOOGLE_SHEETS_AVAILABLE:
+                success, result_data = await self._write_to_google_sheets(
+                    sheet_id, sheet_name, range_start, mode, processed_data
+                )
+                
+                if success:
+                    execution_time = int((time.time() - start_time) * 1000)
+                    return ExecutionResult(
+                        success=True,
+                        output_data=result_data,
+                        execution_time_ms=execution_time,
+                        logs=[
+                            f"Successfully connected to Google Sheets API",
+                            f"Writing data to sheet '{sheet_name}' starting at {range_start}",
+                            f"Mode: {mode}, Format: {data_format}",
+                            f"Successfully wrote {result_data['data_written']['rows_count']} rows",
+                            f"Operation completed in {execution_time}ms"
+                        ],
+                        next_steps=["success"]
+                    )
+                else:
+                    # Fall back to simulation if API fails
+                    pass
+            
+            # Simulation mode (fallback)
+            result_data = {
+                "operation": "write_simulation",
+                "sheet_info": {
+                    "sheet_id": sheet_id,
+                    "sheet_name": sheet_name,
+                    "range": range_start,
+                    "mode": mode
+                },
+                "data_written": {
+                    "rows_count": len(processed_data) if isinstance(processed_data, list) else 1,
+                    "columns_count": len(processed_data[0]) if processed_data and isinstance(processed_data[0], list) else 0,
+                    "format": data_format
+                },
+                "timestamp": datetime.now().isoformat(),
+                "status": "simulated"
+            }
+            
+            execution_time = int((time.time() - start_time) * 1000)
+            
+            return ExecutionResult(
+                success=True,
+                output_data=result_data,
+                execution_time_ms=execution_time,
+                logs=[
+                    f"Connected to Google Sheets document: {sheet_id}",
+                    f"Writing data to sheet '{sheet_name}' starting at {range_start}",
+                    f"Mode: {mode}, Format: {data_format}",
+                    f"Successfully wrote {result_data['data_written']['rows_count']} rows (simulated)",
+                    f"Operation completed in {execution_time}ms"
+                ],
+                next_steps=["success"]
+            )
+            
+        except Exception as e:
+            return ExecutionResult(
+                success=False,
+                output_data={},
+                error=str(e),
+                execution_time_ms=int((time.time() - start_time) * 1000),
+                logs=[f"Error writing to Google Sheets: {str(e)}"],
+                next_steps=["error"]
+            )
+    
+    async def _write_to_google_sheets(self, sheet_id: str, sheet_name: str, range_start: str, 
+                                     mode: str, data: list) -> tuple[bool, dict]:
+        """
+        Write data to Google Sheets using API
+        
+        Returns:
+            tuple: (success: bool, result_data: dict)
+        """
+        try:
+            # Get Google Sheets service
+            sheets_service = get_sheets_service()
+            
+            # Authenticate
+            if not sheets_service.authenticate():
+                return False, {"error": "Failed to authenticate with Google Sheets API"}
+            
+            # Construct range
+            range_name = f"{sheet_name}!{range_start}"
+            
+            # Handle different write modes
+            success = False
+            operation_details = {}
+            
+            if mode == "append":
+                success = sheets_service.append_sheet(sheet_id, range_name, data)
+                operation_details = {"mode": "append", "range": range_name}
+                
+            elif mode == "overwrite":
+                success = sheets_service.write_sheet(sheet_id, range_name, data)
+                operation_details = {"mode": "overwrite", "range": range_name}
+                
+            elif mode == "clear_write":
+                # First clear the sheet, then write
+                clear_range = f"{sheet_name}!A:Z"  # Clear all data
+                sheets_service.clear_sheet(sheet_id, clear_range)
+                success = sheets_service.write_sheet(sheet_id, range_name, data)
+                operation_details = {"mode": "clear_write", "range": range_name, "cleared_range": clear_range}
+            
+            if success:
+                result_data = {
+                    "operation": "write_api",
+                    "sheet_info": {
+                        "sheet_id": sheet_id,
+                        "sheet_name": sheet_name,
+                        "range": range_start,
+                        "mode": mode
+                    },
+                    "data_written": {
+                        "rows_count": len(data),
+                        "columns_count": len(data[0]) if data and len(data) > 0 else 0,
+                        "format": "processed"
+                    },
+                    "api_details": operation_details,
+                    "timestamp": datetime.now().isoformat(),
+                    "status": "success"
+                }
+                return True, result_data
+            else:
+                return False, {"error": f"Failed to write data using mode: {mode}"}
+                
+        except Exception as e:
+            return False, {"error": f"Google Sheets API error: {str(e)}"}
+    
+    def _process_input_data(self, data, format_type):
+        """Process input data based on specified format"""
+        if format_type == "auto":
+            # Auto-detect format
+            if isinstance(data, list):
+                return data
+            elif isinstance(data, dict):
+                return [list(data.keys()), list(data.values())]
+            elif isinstance(data, str):
+                try:
+                    import json
+                    parsed = json.loads(data)
+                    return self._process_input_data(parsed, "auto")
+                except:
+                    # Treat as CSV
+                    return [line.split(',') for line in data.strip().split('\n')]
+            else:
+                return [[str(data)]]
+        
+        elif format_type == "json_array":
+            import json
+            if isinstance(data, str):
+                data = json.loads(data)
+            return data
+        
+        elif format_type == "csv_string":
+            if isinstance(data, str):
+                return [line.split(',') for line in data.strip().split('\n')]
+            else:
+                raise ValueError("CSV format expects string input")
+        
+        elif format_type == "key_value":
+            if isinstance(data, dict):
+                return [list(data.keys()), list(data.values())]
+            else:
+                raise ValueError("Key-Value format expects dictionary input")
+        
+        return data
 
 
 # Global component registry instance

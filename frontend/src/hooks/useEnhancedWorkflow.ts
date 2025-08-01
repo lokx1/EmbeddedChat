@@ -348,19 +348,25 @@ export const useWorkflowEditor = () => {
   }, []);
 
   const loadWorkflow = useCallback(async (workflowId: string) => {
+    console.log('loadWorkflow called with ID:', workflowId);
     setLoading(true);
     setError(null);
 
     try {
+      console.log('Calling API to load workflow...');
       const response = await enhancedWorkflowEditorApi.loadWorkflow(workflowId);
+      console.log('API response:', response);
       if (response.success && response.data) {
+        console.log('Setting current workflow:', response.data);
         setCurrentWorkflow(response.data);
         return response;
       } else {
+        console.log('Load failed:', response.error);
         setError(response.error || 'Failed to load workflow');
         return response;
       }
     } catch (err) {
+      console.log('Load error:', err);
       const error = err instanceof Error ? err.message : 'Unknown error';
       setError(error);
       return { success: false, error };
