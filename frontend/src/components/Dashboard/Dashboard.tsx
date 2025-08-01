@@ -228,7 +228,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onModuleChange = () 
   }
 
   return (
-    <div className={`p-6 space-y-6 min-h-screen transition-colors duration-300 ${
+    <div className={`h-full overflow-auto p-6 space-y-6 transition-colors duration-300 ${
       isDark ? 'bg-gray-900' : 'bg-gray-50'
     }`}>
       {/* Welcome Section */}

@@ -5,8 +5,7 @@ import { useState, useEffect, useCallback } from 'react';
 import workflowApi, { 
   WorkflowTemplate, 
   WorkflowInstance, 
-  WorkflowTaskLog,
-  ApiResponse 
+  WorkflowTaskLog
 } from '../services/workflowApi';
 
 // Hook for managing workflow templates

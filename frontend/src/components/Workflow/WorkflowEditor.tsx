@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import ReactFlow, {
   MiniMap,
   Controls,
@@ -13,20 +13,13 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { useTheme } from '../../contexts/ThemeContext';
-import { 
-  useWorkflowInstances, 
-  useWorkflowInstance,
-  useBackendHealth 
-} from '../../hooks/useWorkflow';
+// import { 
+//   useWorkflowInstances, 
+//   useWorkflowInstance,
+//   useBackendHealth 
+// } from '../../hooks/useWorkflow';
 
-import WorkflowNode from './WorkflowNode';
-import WorkflowToolbar from './WorkflowToolbar';
-import WorkflowSidebar from './WorkflowSidebar';
-import NodePropertiesPanel from './NodePropertiesPanel';
-
-const nodeTypes = {
-  workflowNode: WorkflowNode,
-};
+const nodeTypes = {};
 
 const initialNodes: Node[] = [
   {
@@ -48,7 +41,7 @@ interface WorkflowEditorProps {
 }
 
 export const WorkflowEditor: React.FC<WorkflowEditorProps> = ({
-  onSave,
+  // onSave,
 }) => {
   const { isDark } = useTheme();
   
@@ -87,9 +80,9 @@ export const WorkflowEditor: React.FC<WorkflowEditorProps> = ({
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
-  const [selectedNode, setSelectedNode] = useState<Node | null>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [propertiesPanelOpen, setPropertiesPanelOpen] = useState(false);
+  // Commented out unused variables and functions
+  // const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+  // const [propertiesPanelOpen, setPropertiesPanelOpen] = useState(false);
   
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const [reactFlowInstance, setReactFlowInstance] = useState<any>(null);
@@ -99,30 +92,20 @@ export const WorkflowEditor: React.FC<WorkflowEditorProps> = ({
     [setEdges]
   );
 
-  const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
-    setSelectedNode(node);
-    setPropertiesPanelOpen(true);
-  }, []);
+  // const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
+  //   setSelectedNode(node);
+  //   setPropertiesPanelOpen(true);
+  // }, []);
 
   const onPaneClick = useCallback(() => {
-    setSelectedNode(null);
-    setPropertiesPanelOpen(false);
+    // setSelectedNode(null);
+    // setPropertiesPanelOpen(false);
   }, []);
 
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
   }, []);
-
-  const onDragStart = (event: React.DragEvent, nodeType: string) => {
-    event.dataTransfer.setData('application/reactflow', nodeType);
-    event.dataTransfer.setData('application/nodedata', JSON.stringify({
-      label: nodeType.charAt(0).toUpperCase() + nodeType.slice(1),
-      type: nodeType,
-      config: {}
-    }));
-    event.dataTransfer.effectAllowed = 'move';
-  };
 
   const onDrop = useCallback(
     (event: React.DragEvent) => {
@@ -156,40 +139,41 @@ export const WorkflowEditor: React.FC<WorkflowEditorProps> = ({
     [reactFlowInstance, setNodes]
   );
 
-  const updateNodeData = useCallback((nodeId: string, newData: any) => {
-    setNodes((nds) =>
-      nds.map((node) =>
-        node.id === nodeId
-          ? { ...node, data: { ...node.data, ...newData } }
-          : node
-      )
-    );
-  }, [setNodes]);
+  // Commented out unused functions
+  // const updateNodeData = useCallback((nodeId: string, newData: any) => {
+  //   setNodes((nds) =>
+  //     nds.map((node) =>
+  //       node.id === nodeId
+  //         ? { ...node, data: { ...node.data, ...newData } }
+  //         : node
+  //     )
+  //   );
+  // }, [setNodes]);
 
-  const handleSave = useCallback(() => {
-    if (onSave) {
-      onSave(nodes, edges);
-    }
-  }, [nodes, edges, onSave]);
+  // const handleSave = useCallback(() => {
+  //   if (onSave) {
+  //     onSave(nodes, edges);
+  //   }
+  // }, [nodes, edges, onSave]);
 
-  const executeWorkflow = useCallback(async () => {
-    // TODO: Implement workflow execution
-    console.log('Executing workflow...', { nodes, edges });
-  }, [nodes, edges]);
+  // const executeWorkflow = useCallback(async () => {
+  //   // TODO: Implement workflow execution
+  //   console.log('Executing workflow...', { nodes, edges });
+  // }, [nodes, edges]);
 
-  const handleLoad = useCallback(() => {
-    // TODO: Implement workflow loading
-    console.log('Loading workflow...');
-  }, []);
+  // const handleLoad = useCallback(() => {
+  //   // TODO: Implement workflow loading
+  //   console.log('Loading workflow...');
+  // }, []);
 
-  const handleClear = useCallback(() => {
-    setNodes([]);
-    setEdges([]);
-    setSelectedNode(null);
-    setPropertiesPanelOpen(false);
-  }, [setNodes, setEdges]);
+  // const handleClear = useCallback(() => {
+  //   setNodes([]);
+  //   setEdges([]);
+  //   setSelectedNode(null);
+  //   setPropertiesPanelOpen(false);
+  // }, [setNodes, setEdges]);
 
-  const [isExecuting] = useState(false);
+  // const [isExecuting] = useState(false);
 
   return (
     <div style={{ 
@@ -205,15 +189,15 @@ export const WorkflowEditor: React.FC<WorkflowEditorProps> = ({
         display: 'flex', 
         flexDirection: 'column'
       }}>
-        {/* Toolbar */}
-        <WorkflowToolbar
+        {/* Toolbar - Temporarily disabled */}
+        {/* <WorkflowToolbar
           onSave={handleSave}
           onLoad={handleLoad}
           onClear={handleClear}
           onRun={executeWorkflow}
           isRunning={isExecuting}
           theme={theme}
-        />
+        /> */}
 
         {/* Workflow Canvas with floating sidebar */}
         <div style={{ 
@@ -231,7 +215,7 @@ export const WorkflowEditor: React.FC<WorkflowEditorProps> = ({
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
               onConnect={onConnect}
-              onNodeClick={onNodeClick}
+              // onNodeClick={onNodeClick}
               onPaneClick={onPaneClick}
               onInit={setReactFlowInstance}
               onDrop={onDrop}
@@ -276,16 +260,11 @@ export const WorkflowEditor: React.FC<WorkflowEditorProps> = ({
             </ReactFlow>
           </div>
 
-          {/* Floating Sidebar inside ReactFlow */}
-          <WorkflowSidebar 
-            isOpen={sidebarOpen}
-            onToggle={() => setSidebarOpen(!sidebarOpen)}
-            onDragStart={onDragStart}
-            theme={theme}
-          />
+          {/* Floating Sidebar inside ReactFlow - Temporarily disabled */}
+          {/* <WorkflowSidebar /> */}
 
-          {/* Floating Properties Panel */}
-          {propertiesPanelOpen && selectedNode && (
+          {/* Floating Properties Panel - Temporarily disabled */}
+          {/* {propertiesPanelOpen && selectedNode && (
             <div style={{
               position: 'absolute',
               top: '20px',
@@ -308,7 +287,7 @@ export const WorkflowEditor: React.FC<WorkflowEditorProps> = ({
                 theme={theme}
               />
             </div>
-          )}
+          )} */}
         </div>
       </div>
     </div>

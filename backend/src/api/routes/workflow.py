@@ -1,7 +1,7 @@
 """
 Workflow API Routes
 """
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, WebSocket
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import Dict, Any, List, Optional
@@ -11,7 +11,11 @@ import uuid
 from ...core.database import get_db
 from ...models.workflow import WorkflowTemplate, WorkflowInstance, WorkflowTaskLog
 from ...schemas.workflow_editor import SaveWorkflowRequest, UpdateWorkflowRequest, WorkflowEditorResponse, WorkflowEditorData
+from ...schemas.workflow_components import WorkflowComponentMetadata, ComponentCategory
 from ...services.workflow.workflow_engine import WorkflowExecutor
+from ...services.workflow.execution_engine import WorkflowExecutionEngine
+from ...services.workflow.component_registry import component_registry
+from ...services.workflow.websocket_manager import websocket_manager, handle_websocket_connection, execution_event_callback
 from ...services.workflow.google_services import GoogleServicesManager
 from ...services.workflow.notifications import NotificationManager, EmailService, SlackService
 from ...services.workflow.analytics import AnalyticsService
@@ -30,8 +34,68 @@ async def workflow_health():
     }
 
 
-# Dependency to get workflow executor
-async def get_workflow_executor(db: Session = Depends(get_db)) -> WorkflowExecutor:
+# Dependency to get workflow execution engine
+async def get_execution_engine(db: Session = Depends(get_db)) -> WorkflowExecutionEngine:
+    """Get workflow execution engine"""
+    engine = WorkflowExecutionEngine(db)
+    # Add WebSocket callback for real-time updates
+    engine.add_event_callback(execution_event_callback)
+    return engine
+
+
+# Component Management Endpoints
+
+@router.get("/components", response_model=Dict[str, Any])
+async def get_workflow_components(
+    category: Optional[ComponentCategory] = None
+):
+    """Get available workflow components"""
+    try:
+        if category:
+            components = component_registry.get_components_by_category(category)
+        else:
+            components = component_registry.get_all_components()
+        
+        return {
+            "success": True,
+            "data": components
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+@router.get("/components/{component_type}", response_model=Dict[str, Any])
+async def get_component_metadata(component_type: str):
+    """Get metadata for a specific component type"""
+    try:
+        component_class = component_registry.get_component(component_type)
+        return {
+            "success": True,
+            "data": component_class.get_metadata()
+        }
+    except ValueError as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+# WebSocket endpoint for real-time execution updates
+@router.websocket("/ws/{instance_id}")
+async def websocket_endpoint(websocket: WebSocket, instance_id: str):
+    """WebSocket endpoint for real-time workflow execution updates"""
+    await handle_websocket_connection(websocket, instance_id)
+
+
+def get_workflow_executor(db: Session) -> 'WorkflowExecutor':
     """Get workflow executor with all dependencies"""
     
     try:
@@ -86,7 +150,7 @@ async def create_workflow_template(
             id=str(uuid.uuid4()),
             name=template_data["name"],
             description=template_data.get("description"),
-            template_data=template_data["template_data"],
+            template_data=template_data["workflow_data"],  # Fixed: WorkflowTemplate uses template_data field
             category=template_data.get("category"),
             is_public=template_data.get("is_public", False),
             created_by=template_data.get("created_by")
@@ -137,7 +201,7 @@ async def list_workflow_templates(
                         "description": template.description,
                         "category": template.category,
                         "is_public": template.is_public,
-                        "created_at": template.created_at.isoformat()
+                        "created_at": template.created_at.isoformat() if template.created_at else None
                     }
                     for template in templates
                 ]
@@ -177,7 +241,7 @@ async def get_workflow_template(
                 "template_data": template.template_data,
                 "category": template.category,
                 "is_public": template.is_public,
-                "created_at": template.created_at.isoformat(),
+                "created_at": template.created_at.isoformat() if template.created_at else None,
                 "updated_at": template.updated_at.isoformat() if template.updated_at else None
             }
         }
@@ -220,16 +284,51 @@ async def create_workflow_instance(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/instances/{instance_id}/execute")
-async def execute_workflow_instance(
-    instance_id: str,
-    background_tasks: BackgroundTasks,
-    executor: WorkflowExecutor = Depends(get_workflow_executor),
+@router.get("/instances")
+async def list_workflow_instances(
+    status: Optional[str] = None,
+    limit: Optional[int] = 50,
+    offset: Optional[int] = 0,
     db: Session = Depends(get_db)
 ):
-    """Execute a workflow instance"""
+    """List workflow instances"""
     try:
-        # Get workflow instance
+        query = db.query(WorkflowInstance)
+        
+        if status:
+            query = query.filter(WorkflowInstance.status == status)
+        
+        instances = query.order_by(WorkflowInstance.created_at.desc()).offset(offset).limit(limit).all()
+        
+        return {
+            "success": True,
+            "data": {
+                "instances": [
+                    {
+                        "id": instance.id,
+                        "name": instance.name,
+                        "template_id": instance.template_id,
+                        "status": instance.status,
+                        "created_at": instance.created_at.isoformat() if instance.created_at else None,
+                        "started_at": instance.started_at.isoformat() if instance.started_at else None,
+                        "completed_at": instance.completed_at.isoformat() if instance.completed_at else None,
+                        "created_by": instance.created_by
+                    }
+                    for instance in instances
+                ]
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/instances/{instance_id}")
+async def get_workflow_instance(
+    instance_id: str,
+    db: Session = Depends(get_db)
+):
+    """Get a specific workflow instance"""
+    try:
         instance = db.query(WorkflowInstance).filter(
             WorkflowInstance.id == instance_id
         ).first()
@@ -237,39 +336,163 @@ async def execute_workflow_instance(
         if not instance:
             raise HTTPException(status_code=404, detail="Workflow instance not found")
         
-        if instance.status == "running":
+        return {
+            "success": True,
+            "data": {
+                "instance": {
+                    "id": instance.id,
+                    "name": instance.name,
+                    "template_id": instance.template_id,
+                    "workflow_data": instance.workflow_data,
+                    "status": instance.status,
+                    "input_data": instance.input_data,
+                    "output_data": instance.output_data,
+                    "error_message": instance.error_message,
+                    "created_at": instance.created_at.isoformat() if instance.created_at else None,
+                    "started_at": instance.started_at.isoformat() if instance.started_at else None,
+                    "completed_at": instance.completed_at.isoformat() if instance.completed_at else None,
+                    "created_by": instance.created_by
+                }
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Enhanced Instance Execution Endpoints
+
+@router.post("/instances/{instance_id}/execute")
+async def execute_workflow_instance(
+    instance_id: str,
+    input_data: Optional[Dict[str, Any]] = None,
+    background_tasks: BackgroundTasks = None,
+    execution_engine: WorkflowExecutionEngine = Depends(get_execution_engine),
+    db: Session = Depends(get_db)
+):
+    """Execute a workflow instance with real-time updates"""
+    try:
+        # Check if instance exists
+        instance = db.query(WorkflowInstance).filter(
+            WorkflowInstance.id == instance_id
+        ).first()
+        
+        if not instance:
+            raise HTTPException(status_code=404, detail="Workflow instance not found")
+        
+        # Check if already running
+        current_status = execution_engine.get_execution_status(instance_id)
+        if current_status.get("is_running"):
             raise HTTPException(status_code=400, detail="Workflow is already running")
         
-        if not executor:
-            raise HTTPException(status_code=503, detail="Workflow executor not available")
+        # Start execution in background
+        if background_tasks:
+            background_tasks.add_task(
+                execution_engine.execute_workflow,
+                instance_id,
+                input_data or {}
+            )
+            
+            return {
+                "success": True,
+                "message": "Workflow execution started",
+                "instance_id": instance_id,
+                "status": "starting"
+            }
+        else:
+            # Execute synchronously (for testing)
+            result = await execution_engine.execute_workflow(instance_id, input_data or {})
+            
+            return {
+                "success": True,
+                "message": "Workflow execution completed",
+                "instance_id": instance_id,
+                "status": "completed",
+                "result": result
+            }
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/instances/{instance_id}/stop")
+async def stop_workflow_execution(
+    instance_id: str,
+    execution_engine: WorkflowExecutionEngine = Depends(get_execution_engine)
+):
+    """Stop a running workflow execution"""
+    try:
+        success = await execution_engine.stop_execution(instance_id)
         
-        # Update status to running
-        instance.status = "running"
-        instance.started_at = datetime.now()
-        db.commit()
-        
-        # Execute workflow in background
-        background_tasks.add_task(
-            _execute_workflow_background,
-            instance_id,
-            instance.workflow_data,
-            instance.input_data,
-            executor,
-            db
-        )
+        if success:
+            return {
+                "success": True,
+                "message": "Workflow execution stopped",
+                "instance_id": instance_id
+            }
+        else:
+            raise HTTPException(status_code=404, detail="No running execution found for this instance")
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/instances/{instance_id}/status")
+async def get_execution_status(
+    instance_id: str,
+    execution_engine: WorkflowExecutionEngine = Depends(get_execution_engine)
+):
+    """Get current execution status for a workflow instance"""
+    try:
+        status = execution_engine.get_execution_status(instance_id)
+        return {
+            "success": True,
+            "data": status
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/instances/{instance_id}/logs")
+async def get_execution_logs(
+    instance_id: str,
+    limit: Optional[int] = 100,
+    offset: Optional[int] = 0,
+    db: Session = Depends(get_db)
+):
+    """Get execution logs for a workflow instance"""
+    try:
+        logs = db.query(WorkflowTaskLog).filter(
+            WorkflowTaskLog.workflow_instance_id == instance_id
+        ).order_by(WorkflowTaskLog.created_at.desc()).offset(offset).limit(limit).all()
         
         return {
             "success": True,
-            "message": "Workflow execution started",
-            "instance_id": instance_id,
-            "status": "running"
+            "data": {
+                "logs": [
+                    {
+                        "id": log.id,
+                        "step_name": log.step_name,
+                        "status": log.status,
+                        "created_at": log.created_at.isoformat() if log.created_at else None,
+                        "execution_time_ms": log.execution_time_ms,
+                        "error_message": log.error_message
+                    }
+                    for log in logs
+                ]
+            }
         }
-        
-    except HTTPException:
-        raise
     except Exception as e:
-        db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/instances/{instance_id}/execute-legacy")
+async def execute_workflow_instance_legacy(
+    instance_id: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """Execute a workflow instance (legacy method - deprecated, use new execute endpoint)"""
+    raise HTTPException(status_code=501, detail="Legacy execution method deprecated. Use /instances/{instance_id}/execute instead.")
 
 
 async def _execute_workflow_background(
@@ -404,9 +627,10 @@ async def get_workflow_instance(
 async def process_google_sheets(
     request_data: Dict[str, Any],
     background_tasks: BackgroundTasks,
-    executor: WorkflowExecutor = Depends(get_workflow_executor)
+    db: Session = Depends(get_db)
 ):
-    """Process Google Sheets data with automation workflow"""
+    """Process Google Sheets data with automation workflow (legacy - needs update)"""
+    raise HTTPException(status_code=501, detail="Google Sheets processing endpoint needs to be updated to use new execution engine")
     try:
         google_sheets_id = request_data.get("google_sheets_id")
         if not google_sheets_id:
@@ -455,9 +679,10 @@ async def _execute_sheets_workflow(
 async def generate_daily_report(
     request_data: Dict[str, Any],
     background_tasks: BackgroundTasks,
-    executor: WorkflowExecutor = Depends(get_workflow_executor)
+    db: Session = Depends(get_db)
 ):
-    """Generate daily analytics report"""
+    """Generate daily analytics report (legacy - needs update)"""
+    raise HTTPException(status_code=501, detail="Daily report generation endpoint needs to be updated to use new execution engine")
     try:
         report_date = request_data.get("report_date")  # Optional, defaults to today
         
@@ -656,7 +881,7 @@ async def save_workflow(
             name=request.name,
             description=request.description,
             category=request.category,
-            workflow_data=request.workflow_data.dict(),
+            template_data=request.workflow_data.dict(),  # Fixed: WorkflowTemplate uses template_data field
             is_public=request.is_public,
             created_by="system"  # Replace with actual user ID
         )
@@ -668,14 +893,14 @@ async def save_workflow(
         return {
             "success": True,
             "data": {
-                "id": template.id,
+                "workflow_id": template.id,
                 "name": template.name,
                 "description": template.description,
                 "category": template.category,
-                "workflow_data": template.workflow_data,
+                "workflow_data": template.template_data,  # Fixed: WorkflowTemplate has template_data field
                 "is_public": template.is_public,
-                "created_at": template.created_at.isoformat(),
-                "updated_at": template.updated_at.isoformat()
+                "created_at": template.created_at.isoformat() if template.created_at else None,
+                "updated_at": template.updated_at.isoformat() if template.updated_at else None
             }
         }
         
@@ -824,8 +1049,8 @@ async def list_editor_workflows(
                         "description": template.description,
                         "category": template.category,
                         "is_public": template.is_public,
-                        "created_at": template.created_at.isoformat(),
-                        "updated_at": template.updated_at.isoformat()
+                        "created_at": template.created_at.isoformat() if template.created_at else None,
+                        "updated_at": template.updated_at.isoformat() if template.updated_at else None
                     }
                     for template in templates
                 ]

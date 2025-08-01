@@ -256,22 +256,35 @@ export const EndNode = (props: NodeProps) => (
   />
 );
 
-// Node Types mapping
+// Node Types mapping - Updated to match backend component types
 export const nodeTypes = {
-  start: StartNode,
-  schedule: ScheduleNode,
+  // Triggers
+  manual_trigger: StartNode,
   webhook: WebhookNode,
-  sheets: GoogleSheetsNode,
+  schedule: ScheduleNode,
+  
+  // Data Sources  
+  http_request: APINode,
+  google_sheets: GoogleSheetsNode,
   database: DatabaseNode,
-  api: APINode,
-  ai: AIProcessingNode,
-  transform: TransformNode,
+  
+  // AI Processing
+  ai_processing: AIProcessingNode,
+  data_transform: TransformNode,
+  
+  // Control Flow
   filter: FilterNode,
   condition: ConditionNode,
   delay: DelayNode,
   loop: LoopNode,
+  
+  // Output Actions
+  email_sender: NotificationNode,
+  database_write: DatabaseNode,
   drive: GoogleDriveNode,
-  notification: NotificationNode,
   analytics: AnalyticsNode,
+  
+  // Legacy/Fallback
+  start: StartNode,
   end: EndNode,
 };

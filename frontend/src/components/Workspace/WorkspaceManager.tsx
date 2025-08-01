@@ -5,6 +5,7 @@ import { useAuth } from '../Auth/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { Toggle } from '../UI/Toggle';
 import { WorkflowEditor } from '../WorkflowEditor/WorkflowEditor';
+import EnhancedWorkflowEditor from '../WorkflowEditor/EnhancedWorkflowEditor';
 import { WorkflowDashboard } from '../WorkflowEditor/WorkflowDashboard';
 import { 
   SunIcon, 
@@ -15,7 +16,7 @@ import {
 
 // Placeholder components for different modules
 const ChatModule = () => (
-  <div className="p-6">
+  <div className="h-full overflow-auto p-6">
     <h2 className="text-2xl font-bold text-gray-900 mb-4">Chat Module</h2>
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
       <p className="text-gray-600">Chat interface will be implemented here.</p>
@@ -24,7 +25,7 @@ const ChatModule = () => (
 );
 
 const DocumentModule = () => (
-  <div className="p-6">
+  <div className="h-full overflow-auto p-6">
     <h2 className="text-2xl font-bold text-gray-900 mb-4">Document Management</h2>
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
       <p className="text-gray-600">Document upload and management interface will be implemented here.</p>
@@ -33,39 +34,33 @@ const DocumentModule = () => (
 );
 
 const WorkflowModule = () => {
-  const [workflowView, setWorkflowView] = useState<'dashboard' | 'editor'>('dashboard');
+  const [workflowView, setWorkflowView] = useState<'dashboard' | 'editor' | 'enhanced-editor'>('dashboard');
 
   if (workflowView === 'editor') {
     return (
-      <div style={{ 
-        height: 'calc(100vh - 64px)', // Trừ đi height của header
-        width: '100%',
-        overflow: 'hidden'
-      }}>
-        <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-          <button
-            onClick={() => setWorkflowView('dashboard')}
-            className="text-blue-600 hover:text-blue-800 text-sm font-medium"
-          >
-            ← Back to Dashboard
-          </button>
-        </div>
-        <WorkflowEditor 
-          onBack={() => setWorkflowView('dashboard')}
-        />
-      </div>
+      <WorkflowEditor 
+        onBack={() => setWorkflowView('dashboard')}
+      />
+    );
+  }
+
+  if (workflowView === 'enhanced-editor') {
+    return (
+      <EnhancedWorkflowEditor 
+        onBack={() => setWorkflowView('dashboard')}
+      />
     );
   }
 
   return (
-    <div className="h-full">
-      <WorkflowDashboard onOpenEditor={() => setWorkflowView('editor')} />
-    </div>
+    <WorkflowDashboard 
+      onOpenEditor={() => setWorkflowView('enhanced-editor')}
+    />
   );
 };
 
 const MCPModule = () => (
-  <div className="p-6">
+  <div className="h-full overflow-auto p-6">
     <h2 className="text-2xl font-bold text-gray-900 mb-4">MCP Plugins</h2>
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
       <p className="text-gray-600">Model Context Protocol plugin management will be implemented here.</p>
@@ -74,7 +69,7 @@ const MCPModule = () => (
 );
 
 const AnalyticsModule = () => (
-  <div className="p-6">
+  <div className="h-full overflow-auto p-6">
     <h2 className="text-2xl font-bold text-gray-900 mb-4">Analytics</h2>
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
       <p className="text-gray-600">Analytics and reporting dashboard will be implemented here.</p>
@@ -83,7 +78,7 @@ const AnalyticsModule = () => (
 );
 
 const TeamModule = () => (
-  <div className="p-6">
+  <div className="h-full overflow-auto p-6">
     <h2 className="text-2xl font-bold text-gray-900 mb-4">Team Management</h2>
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
       <p className="text-gray-600">Team collaboration and user management will be implemented here.</p>
@@ -92,7 +87,7 @@ const TeamModule = () => (
 );
 
 const SettingsModule = () => (
-  <div className="p-6">
+  <div className="h-full overflow-auto p-6">
     <h2 className="text-2xl font-bold text-gray-900 mb-4">Settings</h2>
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
       <p className="text-gray-600">Application settings and configuration will be implemented here.</p>
@@ -135,7 +130,7 @@ export const WorkspaceManager: React.FC = () => {
   };
 
   return (
-    <div className={`min-h-screen flex transition-colors duration-300 ${
+    <div className={`h-screen flex overflow-hidden transition-colors duration-300 ${
       isDark ? 'bg-gray-900' : 'bg-gray-50'
     }`}>
       {/* Sidebar */}
@@ -301,7 +296,7 @@ export const WorkspaceManager: React.FC = () => {
         </div>
 
         {/* Content */}
-        <div className={`flex-1 ${activeModule === 'workflows' ? '' : 'overflow-auto'}`}>
+        <div className={`flex-1 overflow-hidden ${activeModule === 'workflows' ? '' : 'overflow-auto'}`}>
           {renderModule()}
         </div>
       </div>

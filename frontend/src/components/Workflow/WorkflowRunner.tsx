@@ -3,7 +3,7 @@
  */
 import React, { useState, useEffect } from 'react';
 import { useWorkflowInstance } from '../../hooks/useWorkflow';
-import { WorkflowInstance } from '../../services/workflowApi';
+// import { WorkflowInstance } from '../../services/workflowApi';
 
 interface WorkflowRunnerProps {
   instanceId: string;

@@ -11,7 +11,7 @@ import {
   useBackendHealth,
   useGoogleSheets
 } from '../../hooks/useWorkflow';
-import { WorkflowInstance, WorkflowTemplate } from '../../services/workflowApi';
+// import { WorkflowInstance } from '../../services/workflowApi';
 
 interface WorkflowDashboardProps {
   onOpenEditor?: () => void;
@@ -19,7 +19,7 @@ interface WorkflowDashboardProps {
 
 export const WorkflowDashboard: React.FC<WorkflowDashboardProps> = ({ onOpenEditor }) => {
   const [activeTab, setActiveTab] = useState<'instances' | 'templates' | 'logs' | 'analytics' | 'sheets'>('instances');
-  const [selectedInstance, setSelectedInstance] = useState<WorkflowInstance | null>(null);
+  // const [selectedInstance, setSelectedInstance] = useState<WorkflowInstance | null>(null);
 
   // Backend integration hooks
   const { isHealthy, checkHealth } = useBackendHealth();
@@ -34,26 +34,19 @@ export const WorkflowDashboard: React.FC<WorkflowDashboardProps> = ({ onOpenEdit
   
   const {
     templates,
-    loading: templatesLoading,
-    error: templatesError,
-    fetchTemplates,
-    createTemplate
+    fetchTemplates
   } = useWorkflowTemplates();
 
   const {
     logs,
-    loading: logsLoading,
-    error: logsError,
     fetchLogs
   } = useTaskLogs();
 
   const {
     dailyData,
-    weeklyData,
     loading: analyticsLoading,
     error: analyticsError,
     fetchDailyAnalytics,
-    fetchWeeklyAnalytics,
     generateDailyReport
   } = useAnalytics();
 
@@ -175,7 +168,7 @@ export const WorkflowDashboard: React.FC<WorkflowDashboardProps> = ({ onOpenEdit
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="h-full bg-gray-50 dark:bg-gray-900 overflow-auto">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
           <div className="flex justify-between items-center">
@@ -310,7 +303,10 @@ export const WorkflowDashboard: React.FC<WorkflowDashboardProps> = ({ onOpenEdit
                           </button>
                         )}
                         <button
-                          onClick={() => setSelectedInstance(instance)}
+                          onClick={() => {
+                            // setSelectedInstance(instance)
+                            console.log('View details for instance:', instance.id);
+                          }}
                           className="bg-gray-600 text-white px-3 py-1 rounded hover:bg-gray-700 text-sm transition-colors"
                         >
                           View Details
