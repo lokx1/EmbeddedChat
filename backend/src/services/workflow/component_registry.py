@@ -20,10 +20,12 @@ from ...schemas.workflow_components import (
 
 # Import Google Sheets service
 try:
-    from ..google_sheets_service import get_sheets_service
+    from .google_services import GoogleSheetsService
     GOOGLE_SHEETS_AVAILABLE = True
-except ImportError:
+    print("✅ Google Sheets service imported successfully")
+except ImportError as e:
     GOOGLE_SHEETS_AVAILABLE = False
+    print(f"❌ Google Sheets service import failed: {e}")
 
 
 class BaseWorkflowComponent(ABC):
@@ -90,8 +92,34 @@ class ManualTriggerComponent(BaseWorkflowComponent):
         start_time = time.time()
         
         try:
-            # Manual trigger just passes through the trigger data
-            output_data = context.input_data.get("trigger_data", {})
+            # Debug: log all input data
+            debug_logs = [
+                f"ManualTrigger input_data keys: {list(context.input_data.keys())}",
+                f"ManualTrigger input_data: {context.input_data}"
+            ]
+            
+            # Manual trigger passes through the trigger data and instance input data
+            trigger_data = context.input_data.get("trigger_data", {})
+            
+            # Also include any data from the workflow instance input_data
+            output_data = {**trigger_data}
+            
+            # Check if there's test data in the input and include it
+            if "data" in context.input_data:
+                output_data["data"] = context.input_data["data"]
+                debug_logs.append(f"Found data in input: {context.input_data['data']}")
+                
+            # If test_data exists, map it to data
+            if "test_data" in context.input_data:
+                output_data["data"] = context.input_data["test_data"]
+                debug_logs.append(f"Found test_data in input: {context.input_data['test_data']}")
+                
+            # Also pass through any other keys from input_data that are not configs
+            config_keys = {"trigger_data", "sheet_id", "sheet_name", "range", "mode", "data_format"}
+            for key, value in context.input_data.items():
+                if key not in config_keys:
+                    output_data[key] = value
+                    debug_logs.append(f"Added key {key} to output")
             
             execution_time = int((time.time() - start_time) * 1000)
             
@@ -99,7 +127,7 @@ class ManualTriggerComponent(BaseWorkflowComponent):
                 success=True,
                 output_data=output_data,
                 execution_time_ms=execution_time,
-                logs=["Manual trigger executed successfully"],
+                logs=debug_logs + [f"Final output data keys: {list(output_data.keys())}"],
                 next_steps=["output"]
             )
         except Exception as e:
@@ -393,14 +421,22 @@ class GoogleSheetsComponent(BaseWorkflowComponent):
             
             # Use real Google Sheets API
             if GOOGLE_SHEETS_AVAILABLE:
-                sheets_service = get_sheets_service()
+                sheets_service = GoogleSheetsService()
                 
-                if not sheets_service.authenticate():
+                if not await sheets_service.authenticate():
                     raise Exception("Failed to authenticate with Google Sheets API")
                 
                 # Read data using API
-                full_range = f"{sheet_name}!{range_str}"
-                values = sheets_service.read_sheet(sheet_id, full_range)
+                success, result_data = await sheets_service.read_sheet(
+                    sheet_id=sheet_id, 
+                    sheet_name=sheet_name, 
+                    range_str=range_str
+                )
+                
+                if success and result_data.get('data'):
+                    values = result_data['data']['values']
+                else:
+                    values = []
                 
                 if values:
                     # Convert to pandas-like format for consistency
@@ -1249,6 +1285,7 @@ class GoogleSheetsWriteComponent(BaseWorkflowComponent):
         start_time = time.time()
         
         try:
+            # Get configuration from input_data (which includes merged node config)
             sheet_id = context.input_data.get("sheet_id")
             sheet_name = context.input_data.get("sheet_name", "Sheet1")
             range_start = context.input_data.get("range", "A1")
@@ -1257,21 +1294,72 @@ class GoogleSheetsWriteComponent(BaseWorkflowComponent):
             
             if not sheet_id:
                 raise ValueError("sheet_id is required")
+                
+            # Debug logging
+            debug_logs = [
+                f"All input_data: {context.input_data}",
+                f"Context previous_outputs keys: {list(context.previous_outputs.keys())}",
+                f"Sheet ID: {sheet_id}",
+                f"Sheet name: {sheet_name}"
+            ]
             
-            # Get input data from previous nodes
-            input_data = context.previous_outputs.get("data", context.input_data.get("data", []))
+            # Log all previous outputs in detail
+            for node_id, node_output in context.previous_outputs.items():
+                debug_logs.append(f"Previous output from {node_id}: {node_output}")
+            
+            # Get input data from previous nodes or workflow input
+            input_data = None
+            
+            # First try to get data from previous node outputs
+            for node_id, node_output in context.previous_outputs.items():
+                debug_logs.append(f"Checking node {node_id}: {type(node_output)}")
+                if isinstance(node_output, dict):
+                    # Try different possible data keys
+                    data_keys = ["data", "results_for_sheets", "processed_results", "records", "values"]
+                    for key in data_keys:
+                        if key in node_output and node_output[key]:
+                            input_data = node_output[key]
+                            debug_logs.append(f"Found data in node {node_id}.{key}: {type(input_data)} with length {len(input_data) if isinstance(input_data, (list, dict)) else 'N/A'}")
+                            break
+                    if input_data:
+                        break
+                        
+            # If no data from previous nodes, try to get from context input_data
+            if not input_data:
+                input_data = context.input_data.get("data", [])
+                debug_logs.append(f"Using context input_data.data: {input_data}")
+                
+            # If still no data, try other common keys in context
+            if not input_data:
+                for key in ["test_data", "sample_data", "rows"]:
+                    if context.input_data.get(key):
+                        input_data = context.input_data.get(key)
+                        debug_logs.append(f"Using context input_data.{key}: {input_data}")
+                        break
             
             if not input_data:
-                raise ValueError("No data provided to write")
+                error_msg = f"No data provided to write. Available keys: {list(context.input_data.keys())}, Previous outputs: {list(context.previous_outputs.keys())}"
+                return ExecutionResult(
+                    success=False,
+                    output_data={},
+                    error=error_msg,
+                    execution_time_ms=int((time.time() - start_time) * 1000),
+                    logs=debug_logs + [error_msg],
+                    next_steps=["error"]
+                )
             
             # Process data based on format
             processed_data = self._process_input_data(input_data, data_format)
             
             # Try to use real Google Sheets API if available
+            debug_logs.append(f"GOOGLE_SHEETS_AVAILABLE: {GOOGLE_SHEETS_AVAILABLE}")
             if GOOGLE_SHEETS_AVAILABLE:
+                debug_logs.append("Attempting to write to Google Sheets API...")
                 success, result_data = await self._write_to_google_sheets(
                     sheet_id, sheet_name, range_start, mode, processed_data
                 )
+                
+                debug_logs.append(f"Google Sheets API result: success={success}, data={result_data}")
                 
                 if success:
                     execution_time = int((time.time() - start_time) * 1000)
@@ -1279,7 +1367,7 @@ class GoogleSheetsWriteComponent(BaseWorkflowComponent):
                         success=True,
                         output_data=result_data,
                         execution_time_ms=execution_time,
-                        logs=[
+                        logs=debug_logs + [
                             f"Successfully connected to Google Sheets API",
                             f"Writing data to sheet '{sheet_name}' starting at {range_start}",
                             f"Mode: {mode}, Format: {data_format}",
@@ -1290,7 +1378,9 @@ class GoogleSheetsWriteComponent(BaseWorkflowComponent):
                     )
                 else:
                     # Fall back to simulation if API fails
-                    pass
+                    debug_logs.append(f"Google Sheets API failed, falling back to simulation: {result_data}")
+            else:
+                debug_logs.append("Google Sheets API not available, using simulation mode")
             
             # Simulation mode (fallback)
             result_data = {
@@ -1316,7 +1406,7 @@ class GoogleSheetsWriteComponent(BaseWorkflowComponent):
                 success=True,
                 output_data=result_data,
                 execution_time_ms=execution_time,
-                logs=[
+                logs=debug_logs + [
                     f"Connected to Google Sheets document: {sheet_id}",
                     f"Writing data to sheet '{sheet_name}' starting at {range_start}",
                     f"Mode: {mode}, Format: {data_format}",
@@ -1346,55 +1436,38 @@ class GoogleSheetsWriteComponent(BaseWorkflowComponent):
         """
         try:
             # Get Google Sheets service
-            sheets_service = get_sheets_service()
+            sheets_service = GoogleSheetsService()
             
             # Authenticate
-            if not sheets_service.authenticate():
+            if not await sheets_service.authenticate():
                 return False, {"error": "Failed to authenticate with Google Sheets API"}
             
             # Construct range
             range_name = f"{sheet_name}!{range_start}"
             
             # Handle different write modes
-            success = False
-            operation_details = {}
-            
             if mode == "append":
-                success = sheets_service.append_sheet(sheet_id, range_name, data)
-                operation_details = {"mode": "append", "range": range_name}
+                success, result_data = await sheets_service.write_to_sheet(
+                    sheet_id, sheet_name, range_start, "append", data
+                )
                 
             elif mode == "overwrite":
-                success = sheets_service.write_sheet(sheet_id, range_name, data)
-                operation_details = {"mode": "overwrite", "range": range_name}
+                success, result_data = await sheets_service.write_to_sheet(
+                    sheet_id, sheet_name, range_start, "overwrite", data
+                )
                 
             elif mode == "clear_write":
-                # First clear the sheet, then write
-                clear_range = f"{sheet_name}!A:Z"  # Clear all data
-                sheets_service.clear_sheet(sheet_id, clear_range)
-                success = sheets_service.write_sheet(sheet_id, range_name, data)
-                operation_details = {"mode": "clear_write", "range": range_name, "cleared_range": clear_range}
-            
-            if success:
-                result_data = {
-                    "operation": "write_api",
-                    "sheet_info": {
-                        "sheet_id": sheet_id,
-                        "sheet_name": sheet_name,
-                        "range": range_start,
-                        "mode": mode
-                    },
-                    "data_written": {
-                        "rows_count": len(data),
-                        "columns_count": len(data[0]) if data and len(data) > 0 else 0,
-                        "format": "processed"
-                    },
-                    "api_details": operation_details,
-                    "timestamp": datetime.now().isoformat(),
-                    "status": "success"
-                }
-                return True, result_data
+                # Use overwrite mode which will replace data
+                success, result_data = await sheets_service.write_to_sheet(
+                    sheet_id, sheet_name, "A1", "overwrite", data
+                )
             else:
-                return False, {"error": f"Failed to write data using mode: {mode}"}
+                # Default to overwrite
+                success, result_data = await sheets_service.write_to_sheet(
+                    sheet_id, sheet_name, range_start, "overwrite", data
+                )
+            
+            return success, result_data
                 
         except Exception as e:
             return False, {"error": f"Google Sheets API error: {str(e)}"}
@@ -1404,7 +1477,19 @@ class GoogleSheetsWriteComponent(BaseWorkflowComponent):
         if format_type == "auto":
             # Auto-detect format
             if isinstance(data, list):
-                return data
+                if len(data) > 0 and isinstance(data[0], dict):
+                    # List of dictionaries (records) - convert to list of lists
+                    if data:
+                        headers = list(data[0].keys())
+                        rows = [headers]  # Add header row
+                        for record in data:
+                            row = [str(record.get(header, "")) for header in headers]
+                            rows.append(row)
+                        return rows
+                    return []
+                else:
+                    # Already list of lists or primitives
+                    return data
             elif isinstance(data, dict):
                 return [list(data.keys()), list(data.values())]
             elif isinstance(data, str):
@@ -1422,6 +1507,14 @@ class GoogleSheetsWriteComponent(BaseWorkflowComponent):
             import json
             if isinstance(data, str):
                 data = json.loads(data)
+            # Handle list of dicts
+            if isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict):
+                headers = list(data[0].keys())
+                rows = [headers]
+                for record in data:
+                    row = [str(record.get(header, "")) for header in headers]
+                    rows.append(row)
+                return rows
             return data
         
         elif format_type == "csv_string":

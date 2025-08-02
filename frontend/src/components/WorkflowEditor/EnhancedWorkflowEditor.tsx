@@ -88,20 +88,20 @@ function EnhancedWorkflowEditorInner({ workflowId, onBack }: EnhancedWorkflowEdi
 
   // Update editor when workflow is loaded
   useEffect(() => {
-    if (currentWorkflow) {
+    if (currentWorkflow && currentWorkflow.workflow_data) {
       const workflowData = currentWorkflow.workflow_data;
-      setWorkflowName(currentWorkflow.name);
+      setWorkflowName(currentWorkflow.name || 'Untitled Workflow');
       setWorkflowDescription(currentWorkflow.description || '');
       
-      // Convert to React Flow format
-      const reactFlowNodes: Node[] = workflowData.nodes.map(node => ({
+      // Convert to React Flow format with safe guards
+      const reactFlowNodes: Node[] = (workflowData.nodes || []).map(node => ({
         id: node.id,
         type: node.type,
-        position: node.position,
-        data: node.data
+        position: node.position || { x: 0, y: 0 },
+        data: node.data || {}
       }));
 
-      const reactFlowEdges: Edge[] = workflowData.edges.map(edge => ({
+      const reactFlowEdges: Edge[] = (workflowData.edges || []).map(edge => ({
         id: edge.id,
         source: edge.source,
         target: edge.target,

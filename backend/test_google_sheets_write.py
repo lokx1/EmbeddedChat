@@ -34,8 +34,8 @@ def test_google_sheets_write_workflow():
                     "label": "Google Sheets Write",
                     "type": "google_sheets_write",
                     "config": {
-                        "sheet_id": "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms",  # Test sheet
-                        "sheet_name": "Class Data",
+                        "sheet_id": "1Wly5cBDxYoPJE3gJtvyPXUpRBzEzuzYOpZPl_Sj4hIc",  # Working sheet
+                        "sheet_name": "Sheet1",
                         "range": "A1",
                         "mode": "append",
                         "data_format": "auto"
@@ -66,20 +66,22 @@ def test_google_sheets_write_workflow():
     print("🚀 Creating workflow template...")
     save_response = requests.post(f"{base_url}/workflow/editor/save", json=save_payload)
     print(f"Save response: {save_response.status_code}")
+    print(f"Save response text: {save_response.text}")
     
     if save_response.status_code == 200:
         template_data = save_response.json()
         print(f"Template response: {json.dumps(template_data, indent=2)}")
-        template_id = template_data["id"]  # Fix: remove ["data"] level
+        template_id = template_data["data"]["workflow_id"]  # Fix: get workflow_id from data
         print(f"✅ Template created with ID: {template_id}")
         
-        # 2. Execute the workflow
-        print("\n📊 Executing workflow...")
-        execute_payload = {
+        # 2. Create workflow instance from template
+        print("\n📊 Creating workflow instance...")
+        instance_payload = {
             "template_id": template_id,
             "name": f"Test execution {datetime.now().strftime('%H:%M:%S')}",
+            "workflow_data": workflow_data,  # Use the same workflow data
             "input_data": {
-                "test_data": [
+                "data": [
                     ["Name", "Age", "City"],
                     ["John Doe", "30", "New York"],
                     ["Jane Smith", "25", "San Francisco"]
@@ -87,39 +89,62 @@ def test_google_sheets_write_workflow():
             }
         }
         
-        execute_response = requests.post(f"{base_url}/workflow/execute", json=execute_payload)
-        print(f"Execute response: {execute_response.status_code}")
+        instance_response = requests.post(f"{base_url}/workflow/instances", json=instance_payload)
+        print(f"Instance response: {instance_response.status_code}")
         
-        if execute_response.status_code == 200:
-            execution_data = execute_response.json()
-            instance_id = execution_data["data"]["id"]
-            print(f"✅ Workflow execution started with ID: {instance_id}")
+        if instance_response.status_code == 200:
+            instance_data = instance_response.json()
+            instance_id = instance_data["instance_id"]
+            print(f"✅ Instance created with ID: {instance_id}")
             
-            # 3. Check execution status
-            import time
-            time.sleep(2)
+            # 3. Execute the instance
+            print("\n🚀 Executing workflow instance...")
+            execute_response = requests.post(f"{base_url}/workflow/instances/{instance_id}/execute")
+            print(f"Execute response: {execute_response.status_code}")
             
-            status_response = requests.get(f"{base_url}/workflow/instances/{instance_id}")
-            if status_response.status_code == 200:
-                status_data = status_response.json()
-                instance = status_data["data"]
-                print(f"\n📋 Execution Status: {instance['status']}")
+            if execute_response.status_code == 200:
+                execution_data = execute_response.json()
+                print(f"✅ Workflow execution started")
                 
-                if instance.get('output_data'):
-                    print("📤 Output Data:")
-                    print(json.dumps(instance['output_data'], indent=2))
+                # 4. Check execution status
+                import time
+                time.sleep(2)
                 
-                if instance.get('error_message'):
-                    print(f"❌ Error: {instance['error_message']}")
+                status_response = requests.get(f"{base_url}/workflow/instances/{instance_id}")
+                if status_response.status_code == 200:
+                    status_data = status_response.json()
+                    instance = status_data["data"]["instance"]
+                    print(f"\n📋 Execution Status: {instance['status']}")
                     
-                if instance.get('execution_logs'):
-                    print("📝 Execution Logs:")
-                    for log in instance['execution_logs']:
-                        print(f"  - {log}")
+                    if instance.get('output_data'):
+                        print("📤 Output Data:")
+                        print(json.dumps(instance['output_data'], indent=2))
+                    
+                    if instance.get('error_message'):
+                        print(f"❌ Error: {instance['error_message']}")
                         
-                return True
+                    if instance.get('execution_logs'):
+                        print("📝 Execution Logs:")
+                        for log in instance['execution_logs']:
+                            print(f"  - {log}")
+                    
+                    # Also check workflow steps for detailed logs
+                    steps = instance.get('steps', [])
+                    if steps:
+                        print(f"\n📊 Workflow Steps ({len(steps)}):")
+                        for i, step in enumerate(steps, 1):
+                            print(f"  Step {i}: {step.get('node_type')} - {step.get('status')}")
+                            if step.get('logs'):
+                                print(f"    Logs: {step['logs']}")
+                            if step.get('output_data'):
+                                print(f"    Output: {json.dumps(step['output_data'], indent=4)}")
+                                
+                    return True
+            else:
+                print(f"❌ Failed to execute workflow: {execute_response.text}")
+                return False
         else:
-            print(f"❌ Failed to execute workflow: {execute_response.text}")
+            print(f"❌ Failed to create instance: {instance_response.text}")
             return False
     else:
         print(f"❌ Failed to create template: {save_response.text}")

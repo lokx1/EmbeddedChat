@@ -69,7 +69,14 @@ class WorkflowExecutionEngine:
         # Update instance status
         instance.status = "running"
         instance.started_at = datetime.now()
-        instance.input_data = input_data or {}
+        
+        # Use instance input_data if no input_data provided in execution call
+        if not input_data and instance.input_data:
+            input_data = instance.input_data
+        elif input_data:
+            # Update instance with new input_data
+            instance.input_data = input_data
+        
         instance.execution_logs = []
         self.db.commit()
         

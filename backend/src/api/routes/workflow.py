@@ -9,7 +9,7 @@ from datetime import datetime
 import uuid
 
 from ...core.database import get_db
-from ...models.workflow import WorkflowTemplate, WorkflowInstance, WorkflowTaskLog
+from ...models.workflow import WorkflowTemplate, WorkflowInstance, WorkflowExecutionStep, WorkflowTaskLog
 from ...schemas.workflow_editor import SaveWorkflowRequest, UpdateWorkflowRequest, WorkflowEditorResponse, WorkflowEditorData
 from ...schemas.workflow_components import WorkflowComponentMetadata, ComponentCategory
 from ...services.workflow.workflow_engine import WorkflowExecutor
@@ -461,21 +461,28 @@ async def get_execution_logs(
 ):
     """Get execution logs for a workflow instance"""
     try:
-        logs = db.query(WorkflowTaskLog).filter(
-            WorkflowTaskLog.workflow_instance_id == instance_id
-        ).order_by(WorkflowTaskLog.created_at.desc()).offset(offset).limit(limit).all()
+        logs = db.query(WorkflowExecutionStep).filter(
+            WorkflowExecutionStep.workflow_instance_id == instance_id
+        ).order_by(WorkflowExecutionStep.created_at.desc()).offset(offset).limit(limit).all()
         
         return {
             "success": True,
             "data": {
-                "logs": [
+                "steps": [
                     {
                         "id": log.id,
                         "step_name": log.step_name,
+                        "step_type": log.step_type,
+                        "node_id": log.node_id,
                         "status": log.status,
                         "created_at": log.created_at.isoformat() if log.created_at else None,
+                        "started_at": log.started_at.isoformat() if log.started_at else None,
+                        "completed_at": log.completed_at.isoformat() if log.completed_at else None,
                         "execution_time_ms": log.execution_time_ms,
-                        "error_message": log.error_message
+                        "error_message": log.error_message,
+                        "input_data": log.input_data,
+                        "output_data": log.output_data,
+                        "logs": []  # For compatibility
                     }
                     for log in logs
                 ]

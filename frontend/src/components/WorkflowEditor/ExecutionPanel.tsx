@@ -14,11 +14,15 @@ interface ExecutionPanelProps {
 
 const ExecutionPanel: React.FC<ExecutionPanelProps> = ({
   executionStatus,
-  executionLogs,
-  executionEvents,
+  executionLogs = [],
+  executionEvents = [],
   onClose
 }) => {
   const { isDark } = useTheme() || { isDark: false };
+
+  // Safe guard against undefined arrays
+  const safeExecutionLogs = executionLogs || [];
+  const safeExecutionEvents = executionEvents || [];
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -99,12 +103,12 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = ({
               ? 'text-blue-400 border-blue-400 bg-gray-700' 
               : 'text-blue-600 border-blue-600 bg-gray-50'
           }`}>
-            Events ({executionEvents.length})
+            Events ({safeExecutionEvents.length})
           </button>
           <button className={`px-4 py-2 text-sm font-medium ${
             isDark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-600 hover:text-gray-800'
           }`}>
-            Logs ({executionLogs.length})
+            Logs ({safeExecutionLogs.length})
           </button>
         </div>
       </div>
@@ -113,7 +117,7 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = ({
       <div className="flex-1 overflow-auto">
         {/* Events Tab */}
         <div className="p-4 space-y-3">
-          {executionEvents.length === 0 ? (
+          {safeExecutionEvents.length === 0 ? (
             <div className={`text-center py-8 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
               <svg className="w-12 h-12 mx-auto mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
@@ -122,7 +126,7 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = ({
               <p className="text-xs mt-1">Execute the workflow to see real-time events</p>
             </div>
           ) : (
-            executionEvents.map((event, index) => (
+            safeExecutionEvents.map((event, index) => (
               <div
                 key={index}
                 className={`p-3 rounded-lg border ${
@@ -158,12 +162,12 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = ({
 
         {/* Logs Tab (hidden for now, would be shown based on tab selection) */}
         <div className="hidden p-4 space-y-3">
-          {executionLogs.length === 0 ? (
+          {safeExecutionLogs.length === 0 ? (
             <div className={`text-center py-8 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
               <p>No logs available</p>
             </div>
           ) : (
-            executionLogs.map((log, index) => (
+            safeExecutionLogs.map((log, index) => (
               <div
                 key={log.id || index}
                 className={`p-3 rounded-lg border ${

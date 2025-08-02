@@ -16,16 +16,173 @@ import pandas as pd
 class GoogleSheetsService:
     """Service for Google Sheets integration"""
     
-    def __init__(self, credentials_path: str):
+    def __init__(self, credentials_path: str = None):
+        if credentials_path is None:
+            credentials_path = "credentials.json"  # Default path
+            
         self.credentials_path = credentials_path
         self.scope = [
             'https://www.googleapis.com/auth/spreadsheets',
             'https://www.googleapis.com/auth/drive'
         ]
-        self.credentials = Credentials.from_service_account_file(
-            credentials_path, scopes=self.scope
-        )
-        self.client = gspread.authorize(self.credentials)
+        self.credentials = None
+        self.client = None
+        self.authenticated = False
+    
+    async def authenticate(self) -> bool:
+        """Authenticate with Google Sheets API"""
+        try:
+            import os
+            if not os.path.exists(self.credentials_path):
+                print(f"❌ Credentials file not found: {self.credentials_path}")
+                return False
+                
+            self.credentials = Credentials.from_service_account_file(
+                self.credentials_path, scopes=self.scope
+            )
+            self.client = gspread.authorize(self.credentials)
+            self.authenticated = True
+            print("✅ Google Sheets authentication successful")
+            return True
+            
+        except Exception as e:
+            print(f"❌ Google Sheets authentication failed: {e}")
+            self.authenticated = False
+            return False
+    
+    async def write_to_sheet(
+        self, 
+        sheet_id: str, 
+        sheet_name: str, 
+        range_start: str, 
+        mode: str, 
+        data: List[List[Any]]
+    ) -> Tuple[bool, Dict[str, Any]]:
+        """Write data to Google Sheets"""
+        try:
+            if not self.authenticated or not self.client:
+                return False, {"error": "Not authenticated"}
+                
+            # Open the spreadsheet
+            sheet = self.client.open_by_key(sheet_id)
+            
+            # Try to get the specific worksheet, create if not exists
+            try:
+                worksheet = sheet.worksheet(sheet_name)
+            except gspread.WorksheetNotFound:
+                # Create new worksheet
+                worksheet = sheet.add_worksheet(title=sheet_name, rows=1000, cols=26)
+                print(f"✅ Created new worksheet: {sheet_name}")
+            
+            # Write data based on mode
+            if mode == "append":
+                # Append rows to the end
+                for row in data:
+                    worksheet.append_row(row)
+            else:
+                # Overwrite starting from range_start
+                # Parse range_start (e.g., "A1")
+                col_letter = ''.join(filter(str.isalpha, range_start))
+                row_num = int(''.join(filter(str.isdigit, range_start)))
+                
+                # Calculate range for update
+                end_col_num = ord(col_letter) - ord('A') + len(data[0]) - 1
+                end_col_letter = chr(ord('A') + end_col_num)
+                end_row_num = row_num + len(data) - 1
+                
+                range_name = f"{col_letter}{row_num}:{end_col_letter}{end_row_num}"
+                worksheet.update(range_name, data)
+            
+            result = {
+                "operation": "write_success",
+                "sheet_info": {
+                    "sheet_id": sheet_id,
+                    "sheet_name": sheet_name,
+                    "range": range_start,
+                    "mode": mode
+                },
+                "data_written": {
+                    "rows_count": len(data),
+                    "columns_count": len(data[0]) if data else 0,
+                    "format": "auto"
+                },
+                "timestamp": datetime.now().isoformat(),
+                "status": "success"
+            }
+            
+            return True, result
+            
+        except Exception as e:
+            print(f"❌ Error writing to Google Sheets: {e}")
+            return False, {"error": str(e)}
+    
+    async def read_sheet(
+        self, 
+        sheet_id: str, 
+        sheet_name: str = None, 
+        range_str: str = "A:Z"
+    ) -> Tuple[bool, Dict[str, Any]]:
+        """Read data from Google Sheets with sheet creation if not exists"""
+        try:
+            if not self.authenticated or not self.client:
+                return False, {"error": "Not authenticated"}
+                
+            # Open the spreadsheet
+            sheet = self.client.open_by_key(sheet_id)
+            
+            # If no sheet_name specified, use first sheet
+            if not sheet_name:
+                worksheet = sheet.sheet1
+                sheet_name = worksheet.title
+            else:
+                # Try to get the specific worksheet, create if not exists
+                try:
+                    worksheet = sheet.worksheet(sheet_name)
+                    print(f"✅ Found existing worksheet: {sheet_name}")
+                except gspread.WorksheetNotFound:
+                    # Create new worksheet
+                    worksheet = sheet.add_worksheet(title=sheet_name, rows=1000, cols=26)
+                    print(f"✅ Created new worksheet: {sheet_name}")
+                    
+                    # Add default headers
+                    default_headers = ["Column A", "Column B", "Column C", "Column D", "Column E"]
+                    worksheet.update("A1:E1", [default_headers])
+                    print(f"✅ Added default headers to new worksheet")
+            
+            # Read data from the specified range
+            try:
+                # Get all values in the range
+                values = worksheet.get(range_str)
+                
+                if not values:
+                    values = []
+                
+                result = {
+                    "operation": "read_success",
+                    "sheet_info": {
+                        "sheet_id": sheet_id,
+                        "sheet_name": sheet_name,
+                        "range": range_str,
+                        "title": sheet.title
+                    },
+                    "data": {
+                        "values": values,
+                        "rows_count": len(values),
+                        "columns_count": len(values[0]) if values else 0
+                    },
+                    "timestamp": datetime.now().isoformat(),
+                    "status": "success"
+                }
+                
+                return True, result
+                
+            except Exception as read_error:
+                print(f"❌ Error reading from worksheet: {read_error}")
+                return False, {"error": f"Failed to read from worksheet: {str(read_error)}"}
+            
+        except Exception as e:
+            print(f"❌ Error in read_sheet: {e}")
+            return False, {"error": str(e)}
     
     async def read_sheet_data(self, sheet_id: str, sheet_range: str = "A:Z") -> List[Dict[str, Any]]:
         """Read data from Google Sheets"""
@@ -40,6 +197,28 @@ class GoogleSheetsService:
             
         except Exception as e:
             raise Exception(f"Failed to read Google Sheets data: {str(e)}")
+    
+    def read_sheet_sync(self, sheet_id: str, range_name: str) -> List[List[Any]]:
+        """Read raw sheet data (synchronous for compatibility)"""
+        try:
+            if not self.authenticated or not self.client:
+                raise Exception("Not authenticated")
+                
+            sheet = self.client.open_by_key(sheet_id)
+            
+            # Parse range for worksheet name
+            if '!' in range_name:
+                sheet_name, cell_range = range_name.split('!', 1)
+                worksheet = sheet.worksheet(sheet_name)
+                values = worksheet.get(cell_range)
+            else:
+                worksheet = sheet.sheet1
+                values = worksheet.get(range_name)
+            
+            return values or []
+            
+        except Exception as e:
+            raise Exception(f"Failed to read sheet data: {str(e)}")
     
     async def update_sheet_row(
         self, 
