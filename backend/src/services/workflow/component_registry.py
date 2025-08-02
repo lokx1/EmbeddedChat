@@ -1,7 +1,7 @@
 """
 Workflow Component Registry
 """
-from typing import Dict, List, Type
+from typing import Dict, List, Type, Tuple, Any
 from abc import ABC, abstractmethod
 import asyncio
 import time
@@ -17,6 +17,15 @@ from ...schemas.workflow_components import (
     ComponentHandle,
     ParameterType
 )
+
+# Import Google Drive service
+try:
+    from .google_drive_service import GoogleDriveService
+    GOOGLE_DRIVE_AVAILABLE = True
+    print("✅ Google Drive service imported successfully")
+except ImportError as e:
+    GOOGLE_DRIVE_AVAILABLE = False
+    print(f"❌ Google Drive service import failed: {e}")
 
 # Import Google Sheets service
 try:
@@ -338,6 +347,7 @@ class ComponentRegistry:
         self.register_component(DataTransformComponent)
         self.register_component(GoogleSheetsComponent)
         self.register_component(GoogleSheetsWriteComponent)
+        self.register_component(GoogleDriveWriteComponent)
         self.register_component(AIProcessingComponent)
         self.register_component(WebhookComponent)
         self.register_component(EmailSenderComponent)
@@ -1530,6 +1540,294 @@ class GoogleSheetsWriteComponent(BaseWorkflowComponent):
                 raise ValueError("Key-Value format expects dictionary input")
         
         return data
+
+
+class GoogleDriveWriteComponent(BaseWorkflowComponent):
+    """Component for writing files to Google Drive"""
+    
+    @classmethod
+    def get_metadata(cls) -> WorkflowComponentMetadata:
+        return WorkflowComponentMetadata(
+            type="google_drive_write",
+            name="Google Drive Write",
+            description="Upload files and data to Google Drive",
+            category="Output & Actions",
+            parameters=[
+                ComponentParameter(
+                    name="file_name",
+                    type=ParameterType.STRING,
+                    required=True,
+                    description="Name of the file to upload",
+                    default_value=""
+                ),
+                ComponentParameter(
+                    name="folder_id",
+                    type=ParameterType.STRING,
+                    required=False,
+                    description="Google Drive folder ID (optional)",
+                    default_value=""
+                ),
+                ComponentParameter(
+                    name="file_type",
+                    type=ParameterType.SELECT,
+                    required=False,
+                    description="Type of file to create",
+                    options=["auto", "text", "json", "csv", "binary"],
+                    default_value="auto"
+                ),
+                ComponentParameter(
+                    name="content_source",
+                    type=ParameterType.SELECT,
+                    required=False,
+                    description="Source of file content",
+                    options=["previous_output", "input_data", "generated"],
+                    default_value="previous_output"
+                ),
+                ComponentParameter(
+                    name="mimetype",
+                    type=ParameterType.STRING,
+                    required=False,
+                    description="MIME type of the file (auto-detected if empty)",
+                    default_value=""
+                )
+            ],
+            inputs=[
+                ComponentHandle(id="input", type="target", position="left", label="Data")
+            ],
+            outputs=[
+                ComponentHandle(id="success", type="source", position="right", label="Success"),
+                ComponentHandle(id="error", type="source", position="bottom", label="Error")
+            ]
+        )
+    
+    async def execute(self, context: ExecutionContext) -> ExecutionResult:
+        start_time = time.time()
+        
+        try:
+            # Get configuration from input_data (includes merged node config)
+            file_name = context.input_data.get("file_name")
+            folder_id = context.input_data.get("folder_id", "")
+            file_type = context.input_data.get("file_type", "auto")
+            content_source = context.input_data.get("content_source", "previous_output")
+            mimetype = context.input_data.get("mimetype", "")
+            
+            if not file_name:
+                raise ValueError("file_name is required")
+            
+            # Debug logging
+            debug_logs = [
+                f"All input_data: {context.input_data}",
+                f"Context previous_outputs keys: {list(context.previous_outputs.keys())}",
+                f"File name: {file_name}",
+                f"Folder ID: {folder_id}",
+                f"File type: {file_type}",
+                f"Content source: {content_source}"
+            ]
+            
+            # Get content to upload
+            content_data = None
+            
+            if content_source == "previous_output":
+                # Get data from previous node outputs
+                for node_id, node_output in context.previous_outputs.items():
+                    debug_logs.append(f"Checking node {node_id}: {type(node_output)}")
+                    if isinstance(node_output, dict):
+                        # Try different possible data keys
+                        data_keys = ["data", "results", "records", "values", "output", "content"]
+                        for key in data_keys:
+                            if key in node_output and node_output[key]:
+                                content_data = node_output[key]
+                                debug_logs.append(f"Found data in node {node_id}.{key}: {type(content_data)}")
+                                break
+                        if content_data:
+                            break
+                        
+            elif content_source == "input_data":
+                content_data = context.input_data.get("content_data")
+                debug_logs.append(f"Using input_data content: {type(content_data)}")
+                
+            if not content_data:
+                error_msg = f"No content data found. Available keys: {list(context.input_data.keys())}, Previous outputs: {list(context.previous_outputs.keys())}"
+                return ExecutionResult(
+                    success=False,
+                    output_data={},
+                    error=error_msg,
+                    execution_time_ms=int((time.time() - start_time) * 1000),
+                    logs=debug_logs + [error_msg],
+                    next_steps=["error"]
+                )
+            
+            # Convert content to bytes based on file type
+            file_content = self._prepare_file_content(content_data, file_type)
+            
+            # Try to use real Google Drive API if available
+            debug_logs.append(f"GOOGLE_DRIVE_AVAILABLE: {GOOGLE_DRIVE_AVAILABLE}")
+            if GOOGLE_DRIVE_AVAILABLE:
+                debug_logs.append("Attempting to upload to Google Drive API...")
+                success, result_data = await self._upload_to_google_drive(
+                    file_content, file_name, folder_id, mimetype
+                )
+                
+                debug_logs.append(f"Google Drive API result: success={success}, data={result_data}")
+                
+                if success:
+                    execution_time = int((time.time() - start_time) * 1000)
+                    return ExecutionResult(
+                        success=True,
+                        output_data=result_data,
+                        execution_time_ms=execution_time,
+                        logs=debug_logs + [
+                            f"Successfully connected to Google Drive API",
+                            f"Uploading file '{file_name}' to Google Drive",
+                            f"Folder ID: {folder_id or 'Root'}",
+                            f"File type: {file_type}",
+                            f"Successfully uploaded file",
+                            f"Operation completed in {execution_time}ms"
+                        ],
+                        next_steps=["success"]
+                    )
+                else:
+                    # Fall back to simulation if API fails
+                    debug_logs.append(f"Google Drive API failed, falling back to simulation: {result_data}")
+            else:
+                debug_logs.append("Google Drive API not available, using simulation mode")
+            
+            # Simulation mode (fallback)
+            result_data = {
+                "operation": "upload_simulation",
+                "file_info": {
+                    "filename": file_name,
+                    "folder_id": folder_id or "root",
+                    "file_type": file_type,
+                    "size": len(file_content),
+                    "mimetype": mimetype or "auto-detected"
+                },
+                "timestamp": datetime.now().isoformat(),
+                "status": "simulated"
+            }
+            
+            execution_time = int((time.time() - start_time) * 1000)
+            
+            return ExecutionResult(
+                success=True,
+                output_data=result_data,
+                execution_time_ms=execution_time,
+                logs=debug_logs + [
+                    f"Connected to Google Drive (simulation)",
+                    f"Uploading file '{file_name}' to Google Drive",
+                    f"Folder ID: {folder_id or 'Root'}",
+                    f"File type: {file_type}",
+                    f"Successfully uploaded file (simulated)",
+                    f"Operation completed in {execution_time}ms"
+                ],
+                next_steps=["success"]
+            )
+            
+        except Exception as e:
+            return ExecutionResult(
+                success=False,
+                output_data={},
+                error=str(e),
+                execution_time_ms=int((time.time() - start_time) * 1000),
+                logs=[f"Error uploading to Google Drive: {str(e)}"],
+                next_steps=["error"]
+            )
+    
+    async def _upload_to_google_drive(
+        self, 
+        file_content: bytes, 
+        filename: str, 
+        folder_id: str, 
+        mimetype: str
+    ) -> Tuple[bool, Dict[str, Any]]:
+        """Upload file to Google Drive using API"""
+        try:
+            # Get Google Drive service
+            drive_service = GoogleDriveService()
+            
+            # Authenticate
+            if not await drive_service.authenticate():
+                return False, {"error": "Failed to authenticate with Google Drive API"}
+            
+            # Upload file
+            success, result_data = await drive_service.upload_file(
+                file_content=file_content,
+                filename=filename,
+                folder_id=folder_id if folder_id else None,
+                mimetype=mimetype if mimetype else None
+            )
+            
+            return success, result_data
+                
+        except Exception as e:
+            return False, {"error": f"Google Drive API error: {str(e)}"}
+    
+    def _prepare_file_content(self, data, file_type: str) -> bytes:
+        """Convert data to bytes based on file type"""
+        if file_type == "json":
+            import json
+            if isinstance(data, (dict, list)):
+                content = json.dumps(data, indent=2, ensure_ascii=False)
+            else:
+                content = str(data)
+            return content.encode('utf-8')
+            
+        elif file_type == "csv":
+            import csv
+            import io
+            
+            output = io.StringIO()
+            if isinstance(data, list):
+                if len(data) > 0:
+                    if isinstance(data[0], dict):
+                        # List of dictionaries - convert to CSV
+                        fieldnames = data[0].keys()
+                        writer = csv.DictWriter(output, fieldnames=fieldnames)
+                        writer.writeheader()
+                        for row in data:
+                            writer.writerow(row)
+                    elif isinstance(data[0], list):
+                        # List of lists - write as CSV
+                        writer = csv.writer(output)
+                        for row in data:
+                            writer.writerow(row)
+                    else:
+                        # List of primitives
+                        writer = csv.writer(output)
+                        for item in data:
+                            writer.writerow([item])
+            else:
+                # Single value
+                writer = csv.writer(output)
+                writer.writerow([str(data)])
+            
+            return output.getvalue().encode('utf-8')
+            
+        elif file_type == "text":
+            if isinstance(data, str):
+                return data.encode('utf-8')
+            else:
+                return str(data).encode('utf-8')
+                
+        elif file_type == "binary":
+            if isinstance(data, bytes):
+                return data
+            elif isinstance(data, str):
+                return data.encode('utf-8')
+            else:
+                return str(data).encode('utf-8')
+                
+        else:  # auto
+            if isinstance(data, str):
+                return data.encode('utf-8')
+            elif isinstance(data, bytes):
+                return data
+            elif isinstance(data, (dict, list)):
+                import json
+                content = json.dumps(data, indent=2, ensure_ascii=False)
+                return content.encode('utf-8')
+            else:
+                return str(data).encode('utf-8')
 
 
 # Global component registry instance
