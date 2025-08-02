@@ -1259,7 +1259,45 @@ class GoogleSheetsWriteComponent(BaseWorkflowComponent):
                 raise ValueError("sheet_id is required")
             
             # Get input data from previous nodes
-            input_data = context.previous_outputs.get("data", context.input_data.get("data", []))
+            # Try multiple data sources in order of preference
+            input_data = None
+            
+            # Search through all previous node outputs for data
+            for node_id, node_output in context.previous_outputs.items():
+                if not isinstance(node_output, dict):
+                    continue
+                    
+                # 1. Check for processed results from AI processing
+                if "processed_results" in node_output:
+                    input_data = node_output["processed_results"]
+                    break
+                # 2. Check for formatted results for sheets
+                elif "results_for_sheets" in node_output:
+                    input_data = node_output["results_for_sheets"]
+                    break
+                # 3. Check for direct data input
+                elif "data" in node_output:
+                    input_data = node_output["data"]
+                    break
+                # 4. Check for values from Google Sheets read
+                elif "values" in node_output:
+                    input_data = node_output["values"]
+                    break
+            
+            # Fallback: check direct input data
+            if not input_data and "data" in context.input_data:
+                input_data = context.input_data["data"]
+            
+            # Last resort: try to get any list data from any node output
+            if not input_data:
+                for node_id, node_output in context.previous_outputs.items():
+                    if isinstance(node_output, dict):
+                        for key, value in node_output.items():
+                            if isinstance(value, list) and value:
+                                input_data = value
+                                break
+                        if input_data:
+                            break
             
             if not input_data:
                 raise ValueError("No data provided to write")
@@ -1351,6 +1389,29 @@ class GoogleSheetsWriteComponent(BaseWorkflowComponent):
             # Authenticate
             if not sheets_service.authenticate():
                 return False, {"error": "Failed to authenticate with Google Sheets API"}
+            
+            # Check if sheet exists, create if not
+            try:
+                # Try to get sheet info to check if sheet exists
+                sheet_info = sheets_service.get_sheet_info(sheet_id)
+                if sheet_info:
+                    existing_sheets = [sheet['title'] for sheet in sheet_info.get('sheets', [])]
+                    
+                    if sheet_name not in existing_sheets:
+                        # Sheet doesn't exist, create it
+                        create_success = sheets_service.create_sheet(sheet_id, sheet_name)
+                        if create_success:
+                            # Add headers to new sheet
+                            headers = [["Name", "Value", "Timestamp", "Status"]]
+                            sheets_service.write_sheet(sheet_id, f"{sheet_name}!A1", headers)
+                        else:
+                            return False, {"error": f"Failed to create sheet '{sheet_name}'"}
+            except Exception as e:
+                # If sheet check fails, try to create anyway (sheet might not exist)
+                create_success = sheets_service.create_sheet(sheet_id, sheet_name)
+                if create_success:
+                    headers = [["Name", "Value", "Timestamp", "Status"]]
+                    sheets_service.write_sheet(sheet_id, f"{sheet_name}!A1", headers)
             
             # Construct range
             range_name = f"{sheet_name}!{range_start}"

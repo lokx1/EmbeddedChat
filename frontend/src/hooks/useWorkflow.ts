@@ -359,11 +359,9 @@ export const useBackendHealth = () => {
   }, []);
 
   useEffect(() => {
+    // Check health once on mount only - no automatic polling
     checkHealth();
-    // Check health every 30 seconds
-    const interval = setInterval(checkHealth, 30000);
-    return () => clearInterval(interval);
-  }, [checkHealth]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return {
     isHealthy,

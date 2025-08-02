@@ -21,10 +21,12 @@ import 'reactflow/dist/style.css';
 
 import { nodeTypes } from './NodeTypes';
 import DynamicWorkflowSidebar from './DynamicWorkflowSidebar';
-import ExecutionPanel from './ExecutionPanel';
+import EnhancedExecutionPanel from './EnhancedExecutionPanel';
+import FloatingExecutionMonitor from './FloatingExecutionMonitor';
 import DynamicNodeConfigPanel from './DynamicNodeConfigPanel';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useWorkflowEditor, useWorkflowExecution, useWorkflowComponents } from '../../hooks/useEnhancedWorkflow';
+import { useExecutionMonitor } from '../../hooks/useExecutionMonitor';
 
 // Initial empty state
 const initialNodes: Node[] = [];
@@ -68,14 +70,15 @@ function EnhancedWorkflowEditorInner({ workflowId, onBack }: EnhancedWorkflowEdi
 
   const {
     executionStatus,
-    executionLogs,
-    executionEvents,
     isConnected,
     loading: executionLoading,
     error: executionError,
     executeWorkflow,
     stopExecution,
-  } = useWorkflowExecution(currentInstanceId || undefined);
+  } = useWorkflowExecution(); // Removed auto-connection - no instanceId passed
+
+  // Execution monitoring
+  const executionMonitor = useExecutionMonitor();
 
   // Load workflow if workflowId is provided
   useEffect(() => {
@@ -188,7 +191,7 @@ function EnhancedWorkflowEditorInner({ workflowId, onBack }: EnhancedWorkflowEdi
   );
 
   // Handle node click to open config panel
-  const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
+  const onNodeClick = useCallback((_event: React.MouseEvent, node: Node) => {
     setSelectedNode(node);
     setConfigPanelOpen(true);
   }, []);
@@ -214,10 +217,10 @@ function EnhancedWorkflowEditorInner({ workflowId, onBack }: EnhancedWorkflowEdi
     setIsModified(true);
   }, [setNodes, setEdges]);
 
-  const handleSave = useCallback(async () => {
+  const handleSave = useCallback(() => {
     if (!workflowName.trim()) {
       alert('Please enter a workflow name');
-      return;
+      return Promise.reject(new Error('No workflow name'));
     }
 
     const workflowData = convertReactFlowData(nodes, edges, viewport);
@@ -230,99 +233,121 @@ function EnhancedWorkflowEditorInner({ workflowId, onBack }: EnhancedWorkflowEdi
       is_public: false
     };
 
-    const result = await saveWorkflow(saveRequest);
-    
-    if (result.success) {
-      setIsModified(false);
-      alert('Workflow saved successfully!');
-      
-      // If this is a new workflow, we could navigate to edit it
-      if (result.data?.id && !workflowId) {
-        setCurrentWorkflow({
-          id: result.data.id,
-          name: workflowName,
-          description: workflowDescription,
-          workflow_data: workflowData,
-          status: 'draft',
-          created_at: new Date().toISOString()
-        });
-      }
-    } else {
-      alert(`Failed to save workflow: ${result.error}`);
-    }
+    return saveWorkflow(saveRequest)
+      .then(result => {
+        if (result.success) {
+          setIsModified(false);
+          alert('Workflow saved successfully!');
+          
+          // If this is a new workflow, we could navigate to edit it
+          if (result.data?.id && !workflowId) {
+            setCurrentWorkflow({
+              id: result.data.id,
+              name: workflowName,
+              description: workflowDescription,
+              workflow_data: workflowData,
+              status: 'draft',
+              created_at: new Date().toISOString()
+            });
+          }
+          return result;
+        } else {
+          alert(`Failed to save workflow: ${result.error}`);
+          throw new Error(result.error || 'Save failed');
+        }
+      });
   }, [workflowName, workflowDescription, nodes, edges, viewport, convertReactFlowData, saveWorkflow, workflowId, setCurrentWorkflow]);
 
-  const handleExecute = useCallback(async () => {
+  const handleExecute = useCallback(() => {
     if (!currentWorkflow) {
       // Save first if not saved
       if (isModified) {
-        await handleSave();
-        if (!currentWorkflow) return;
+        handleSave()
+          .then(() => {
+            if (!currentWorkflow) return;
+            executeWorkflowInternal();
+          });
       } else {
         alert('Please save the workflow first');
         return;
       }
+    } else {
+      executeWorkflowInternal();
     }
 
-    // Check if workflow has nodes
-    if (nodes.length === 0) {
-      alert('Cannot execute empty workflow');
-      return;
-    }
+    function executeWorkflowInternal() {
+      // Check if workflow has nodes
+      if (nodes.length === 0) {
+        alert('Cannot execute empty workflow');
+        return;
+      }
 
-    try {
       // Create a real instance for execution
       const workflowData = convertReactFlowData(nodes, edges, viewport);
       const instanceData = {
         name: `${workflowName} - Execution ${new Date().toLocaleTimeString()}`,
-        template_id: currentWorkflow.id,
+        template_id: currentWorkflow?.id,
         workflow_data: workflowData,
         input_data: {},
         created_by: 'frontend_user'
       };
 
       // Use the createInstance function from useWorkflowEditor hook
-      const createInstanceResponse = await fetch('http://localhost:8000/api/v1/workflow/instances', {
+      fetch('http://localhost:8000/api/v1/workflow/instances', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(instanceData)
+      })
+      .then(createInstanceResponse => {
+        if (!createInstanceResponse.ok) {
+          throw new Error(`Failed to create instance: ${createInstanceResponse.status}`);
+        }
+        return createInstanceResponse.json();
+      })
+      .then(instanceResult => {
+        const newInstanceId = instanceResult.instance_id;
+
+        if (!newInstanceId) {
+          throw new Error('No instance ID returned from server');
+        }
+
+        console.log('Created instance:', newInstanceId);
+        setCurrentInstanceId(newInstanceId);
+        
+        // Integrate with execution monitor
+        executionMonitor.setWorkflowInstance(newInstanceId);
+        executionMonitor.showPanel(newInstanceId);
+        
+        setExecutionPanelOpen(true);
+
+        // Execute the workflow with real instance ID
+        return executeWorkflow(newInstanceId, {});
+      })
+      .then(result => {
+        if (!result.success) {
+          alert(`Failed to execute workflow: ${result.error}`);
+        }
+      })
+      .catch(error => {
+        console.error('Execution error:', error);
+        alert(`Failed to execute workflow: ${error instanceof Error ? error.message : 'Unknown error'}`);
       });
-
-      if (!createInstanceResponse.ok) {
-        throw new Error(`Failed to create instance: ${createInstanceResponse.status}`);
-      }
-
-      const instanceResult = await createInstanceResponse.json();
-      const newInstanceId = instanceResult.instance_id;
-
-      if (!newInstanceId) {
-        throw new Error('No instance ID returned from server');
-      }
-
-      console.log('Created instance:', newInstanceId);
-      setCurrentInstanceId(newInstanceId);
-      setExecutionPanelOpen(true);
-
-      // Execute the workflow with real instance ID
-      const result = await executeWorkflow(newInstanceId, {});
-      
-      if (!result.success) {
-        alert(`Failed to execute workflow: ${result.error}`);
-      }
-    } catch (error) {
-      console.error('Execution error:', error);
-      alert(`Failed to execute workflow: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }, [currentWorkflow, isModified, handleSave, nodes, edges, viewport, workflowName, convertReactFlowData, executeWorkflow]);
 
-  const handleStop = useCallback(async () => {
+  const handleStop = useCallback(() => {
     if (currentInstanceId && executionStatus?.is_running) {
-      const result = await stopExecution(currentInstanceId);
-      if (!result.success) {
-        alert(`Failed to stop execution: ${result.error}`);
-      }
+      stopExecution(currentInstanceId)
+        .then(result => {
+          if (!result.success) {
+            alert(`Failed to stop execution: ${result.error}`);
+          }
+        })
+        .catch(error => {
+          alert(`Failed to stop execution: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        });
     }
   }, [currentInstanceId, executionStatus, stopExecution]);
 
@@ -385,7 +410,15 @@ function EnhancedWorkflowEditorInner({ workflowId, onBack }: EnhancedWorkflowEdi
             </button>
 
             <button
-              onClick={() => setExecutionPanelOpen(!executionPanelOpen)}
+              onClick={() => {
+                const newState = !executionPanelOpen;
+                setExecutionPanelOpen(newState);
+                if (newState) {
+                  executionMonitor.showPanel(currentInstanceId || undefined);
+                } else {
+                  executionMonitor.hidePanel();
+                }
+              }}
               className={`p-2 rounded-lg ${
                 isDark ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-600 hover:bg-gray-100'
               } ${executionPanelOpen ? 'bg-blue-100 text-blue-600' : ''}`}
@@ -486,15 +519,15 @@ function EnhancedWorkflowEditorInner({ workflowId, onBack }: EnhancedWorkflowEdi
           </ReactFlow>
         </div>
 
-        {/* Execution Panel */}
-        {executionPanelOpen && (
-          <ExecutionPanel
-            executionStatus={executionStatus}
-            executionLogs={executionLogs}
-            executionEvents={executionEvents}
-            onClose={() => setExecutionPanelOpen(false)}
-          />
-        )}
+        {/* Enhanced Execution Panel */}
+        <EnhancedExecutionPanel
+          workflowInstanceId={currentInstanceId || undefined}
+          onClose={() => {
+            setExecutionPanelOpen(false);
+            executionMonitor.hidePanel();
+          }}
+          isVisible={executionMonitor.isVisible}
+        />
 
         {/* Config Panel */}
         {configPanelOpen && selectedNode && (
@@ -524,6 +557,9 @@ function EnhancedWorkflowEditorInner({ workflowId, onBack }: EnhancedWorkflowEdi
             </div>
           </div>
         )}
+        
+        {/* Floating Execution Monitor */}
+        <FloatingExecutionMonitor position="bottom-right" />
       </div>
     </div>
   );

@@ -1,0 +1,6 @@
+@echo off
+echo Restarting backend server...
+taskkill /f /im python.exe 2>nul
+timeout /t 2 /nobreak >nul
+echo Starting server...
+python main.py

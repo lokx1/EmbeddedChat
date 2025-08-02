@@ -1,8 +1,9 @@
 """
 Workflow API Routes
 """
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, WebSocket
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, WebSocket, Body
 from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func
 from typing import Dict, Any, List, Optional
 from datetime import datetime
@@ -13,7 +14,7 @@ from ...models.workflow import WorkflowTemplate, WorkflowInstance, WorkflowTaskL
 from ...schemas.workflow_editor import SaveWorkflowRequest, UpdateWorkflowRequest, WorkflowEditorResponse, WorkflowEditorData
 from ...schemas.workflow_components import WorkflowComponentMetadata, ComponentCategory
 from ...services.workflow.workflow_engine import WorkflowExecutor
-from ...services.workflow.execution_engine import WorkflowExecutionEngine
+from ...services.workflow.execution_engine_new import WorkflowExecutionEngine
 from ...services.workflow.component_registry import component_registry
 from ...services.workflow.websocket_manager import websocket_manager, handle_websocket_connection, execution_event_callback
 from ...services.workflow.google_services import GoogleServicesManager
@@ -35,7 +36,7 @@ async def workflow_health():
 
 
 # Dependency to get workflow execution engine
-async def get_execution_engine(db: Session = Depends(get_db)) -> WorkflowExecutionEngine:
+def get_execution_engine(db: Session = Depends(get_db)) -> WorkflowExecutionEngine:
     """Get workflow execution engine"""
     engine = WorkflowExecutionEngine(db)
     # Add WebSocket callback for real-time updates
@@ -364,10 +365,9 @@ async def get_workflow_instance(
 @router.post("/instances/{instance_id}/execute")
 async def execute_workflow_instance(
     instance_id: str,
-    input_data: Optional[Dict[str, Any]] = None,
-    background_tasks: BackgroundTasks = None,
     execution_engine: WorkflowExecutionEngine = Depends(get_execution_engine),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    input_data: Optional[Dict[str, Any]] = Body(None)
 ):
     """Execute a workflow instance with real-time updates"""
     try:
@@ -381,34 +381,20 @@ async def execute_workflow_instance(
         
         # Check if already running
         current_status = execution_engine.get_execution_status(instance_id)
-        if current_status.get("is_running"):
+        if current_status == "running":
             raise HTTPException(status_code=400, detail="Workflow is already running")
         
-        # Start execution in background
-        if background_tasks:
-            background_tasks.add_task(
-                execution_engine.execute_workflow,
-                instance_id,
-                input_data or {}
-            )
-            
-            return {
-                "success": True,
-                "message": "Workflow execution started",
-                "instance_id": instance_id,
-                "status": "starting"
-            }
-        else:
-            # Execute synchronously (for testing)
-            result = await execution_engine.execute_workflow(instance_id, input_data or {})
-            
-            return {
-                "success": True,
-                "message": "Workflow execution completed",
+        # Execute synchronously 
+        result = execution_engine.execute_workflow(instance_id, input_data or {})
+        
+        return {
+            "success": True,
+            "data": {
                 "instance_id": instance_id,
                 "status": "completed",
                 "result": result
             }
+        }
             
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -421,13 +407,14 @@ async def stop_workflow_execution(
 ):
     """Stop a running workflow execution"""
     try:
-        success = await execution_engine.stop_execution(instance_id)
+        success = execution_engine.stop_execution(instance_id)
         
         if success:
             return {
                 "success": True,
-                "message": "Workflow execution stopped",
-                "instance_id": instance_id
+                "data": {
+                    "instance_id": instance_id
+                }
             }
         else:
             raise HTTPException(status_code=404, detail="No running execution found for this instance")

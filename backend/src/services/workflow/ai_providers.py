@@ -24,7 +24,7 @@ class BaseAIProvider(ABC):
         self.base_url = base_url
     
     @abstractmethod
-    async def generate_content(
+    def generate_content(
         self, 
         prompt: str, 
         output_format: str,
@@ -35,7 +35,7 @@ class BaseAIProvider(ABC):
         pass
     
     @abstractmethod
-    async def process_with_assets(
+    def process_with_assets(
         self,
         description: str,
         asset_urls: List[str],
@@ -335,7 +335,7 @@ class OllamaProvider(BaseAIProvider):
         super().__init__(base_url=base_url)
         self.client = ollama.AsyncClient(host=base_url)
     
-    async def generate_content(
+    def generate_content(
         self, 
         prompt: str, 
         output_format: str,
@@ -351,10 +351,11 @@ class OllamaProvider(BaseAIProvider):
             else:
                 enhanced_prompt = prompt
             
-            response = await self.client.chat(
+            # Use sync ollama client for simplicity
+            import ollama
+            response = ollama.chat(
                 model=model_name,
-                messages=[{"role": "user", "content": enhanced_prompt}],
-                **kwargs
+                messages=[{"role": "user", "content": enhanced_prompt}]
             )
             
             return {
@@ -375,7 +376,7 @@ class OllamaProvider(BaseAIProvider):
                 "content": None
             }
     
-    async def process_with_assets(
+    def process_with_assets(
         self,
         description: str,
         asset_urls: List[str],
@@ -389,10 +390,11 @@ class OllamaProvider(BaseAIProvider):
             asset_context = f"\nInput assets: {', '.join(asset_urls)}" if asset_urls else ""
             full_prompt = f"{description}{asset_context}"
             
-            response = await self.client.chat(
+            # Use sync ollama client for simplicity
+            import ollama
+            response = ollama.chat(
                 model=model_name,
-                messages=[{"role": "user", "content": full_prompt}],
-                **kwargs
+                messages=[{"role": "user", "content": full_prompt}]
             )
             
             return {

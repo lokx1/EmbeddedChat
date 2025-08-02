@@ -131,7 +131,7 @@ export const useWorkflowInstances = () => {
 };
 
 // Hook for workflow execution with real-time updates
-export const useWorkflowExecution = (instanceId?: string) => {
+export const useWorkflowExecution = () => {
   const [executionStatus, setExecutionStatus] = useState<ExecutionStatus | null>(null);
   const [executionLogs, setExecutionLogs] = useState<ExecutionLog[]>([]);
   const [executionEvents, setExecutionEvents] = useState<ExecutionEvent[]>([]);
@@ -213,51 +213,53 @@ export const useWorkflowExecution = (instanceId?: string) => {
   }, []);
 
   // Execute workflow
-  const executeWorkflow = useCallback(async (targetInstanceId: string, inputData?: Record<string, any>) => {
+  const executeWorkflow = useCallback((targetInstanceId: string, inputData?: Record<string, any>) => {
     setLoading(true);
     setError(null);
 
-    try {
-      const response = await enhancedWorkflowEditorApi.executeInstance(targetInstanceId, inputData);
-      if (response.success) {
-        // Connect to real-time updates if not already connected
-        if (!isConnected) {
-          connectToUpdates(targetInstanceId);
+    return enhancedWorkflowEditorApi.executeInstance(targetInstanceId, inputData)
+      .then(response => {
+        if (response.success) {
+          // No automatic WebSocket connection - user can manually connect if needed
+          console.log(`Workflow execution started for instance: ${targetInstanceId} - no auto-connection`);
+          return response;
+        } else {
+          setError(response.error || 'Failed to execute workflow');
+          return response;
         }
-        return response;
-      } else {
-        setError(response.error || 'Failed to execute workflow');
-        return response;
-      }
-    } catch (err) {
-      const error = err instanceof Error ? err.message : 'Unknown error';
-      setError(error);
-      return { success: false, error };
-    } finally {
-      setLoading(false);
-    }
-  }, [isConnected, connectToUpdates]);
+      })
+      .catch(err => {
+        const error = err instanceof Error ? err.message : 'Unknown error';
+        setError(error);
+        return { success: false, error };
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  }, []);
 
   // Stop execution
-  const stopExecution = useCallback(async (targetInstanceId: string) => {
+  const stopExecution = useCallback((targetInstanceId: string) => {
     setLoading(true);
     setError(null);
 
-    try {
-      const response = await enhancedWorkflowEditorApi.stopExecution(targetInstanceId);
-      if (response.success) {
-        return response;
-      } else {
-        setError(response.error || 'Failed to stop execution');
-        return response;
-      }
-    } catch (err) {
-      const error = err instanceof Error ? err.message : 'Unknown error';
-      setError(error);
-      return { success: false, error };
-    } finally {
-      setLoading(false);
-    }
+    return enhancedWorkflowEditorApi.stopExecution(targetInstanceId)
+      .then(response => {
+        if (response.success) {
+          return response;
+        } else {
+          setError(response.error || 'Failed to stop execution');
+          return response;
+        }
+      })
+      .catch(err => {
+        const error = err instanceof Error ? err.message : 'Unknown error';
+        setError(error);
+        return { success: false, error };
+      })
+      .finally(() => {
+        setLoading(false);
+      });
   }, []);
 
   // Fetch execution status
@@ -288,18 +290,17 @@ export const useWorkflowExecution = (instanceId?: string) => {
     }
   }, []);
 
-  // Auto-connect to updates when instanceId changes
+  // Manual connection only - no auto-connect
+  // Users must manually connect when needed
   useEffect(() => {
-    if (instanceId) {
-      connectToUpdates(instanceId);
-      fetchExecutionStatus(instanceId);
-      fetchExecutionLogs(instanceId);
-    }
-
+    // No automatic connection - everything is manual
+    console.log('useWorkflowExecution initialized - no auto-connection');
+    
     return () => {
+      // Always disconnect on cleanup
       disconnect();
     };
-  }, [instanceId, connectToUpdates, fetchExecutionStatus, fetchExecutionLogs, disconnect]);
+  }, [disconnect]);
 
   return {
     executionStatus,

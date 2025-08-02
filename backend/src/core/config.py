@@ -27,7 +27,7 @@ class Settings(BaseSettings):
         return [origin.strip() for origin in self.BACKEND_CORS_ORIGINS.split(",")]
     
     # Rate Limiting
-    RATE_LIMIT_REQUESTS: int = 100
+    RATE_LIMIT_REQUESTS: int = 1000  # Increased from 100 to 1000 for development
     RATE_LIMIT_PERIOD: int = 60  # seconds
     
     # Redis

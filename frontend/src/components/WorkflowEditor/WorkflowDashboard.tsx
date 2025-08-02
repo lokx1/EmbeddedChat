@@ -11,6 +11,7 @@ import {
   useGoogleSheets
 } from '../../hooks/useWorkflow';
 import { useWorkflowEditor } from '../../hooks/useEnhancedWorkflow';
+import { WorkflowCompletionNotification } from '../WorkflowExecution/WorkflowCompletionNotification';
 import { WorkflowTemplate } from '../../services/enhancedWorkflowEditorApi';
 // import { WorkflowInstance } from '../../services/workflowApi';
 
@@ -21,6 +22,7 @@ interface WorkflowDashboardProps {
 
 export const WorkflowDashboard: React.FC<WorkflowDashboardProps> = ({ onOpenEditor, onLoadTemplate }) => {
   const [activeTab, setActiveTab] = useState<'instances' | 'templates' | 'logs' | 'analytics' | 'sheets'>('instances');
+  const [completedWorkflowId, setCompletedWorkflowId] = useState<string | null>(null);
   // const [selectedInstance, setSelectedInstance] = useState<WorkflowInstance | null>(null);
 
   // Backend integration hooks
@@ -35,7 +37,7 @@ export const WorkflowDashboard: React.FC<WorkflowDashboardProps> = ({ onOpenEdit
   } = useWorkflowInstances();
   
   // Use workflow editor hook for templates
-  const { availableWorkflows: templates, loading: templatesLoading, error: templatesError, fetchAvailableWorkflows: fetchTemplates } = useWorkflowEditor();
+  const { availableWorkflows: templates, fetchAvailableWorkflows: fetchTemplates } = useWorkflowEditor();
 
   const {
     logs,
@@ -67,11 +69,15 @@ export const WorkflowDashboard: React.FC<WorkflowDashboardProps> = ({ onOpenEdit
     fetchDailyAnalytics(today);
   }, [fetchInstances, fetchTemplates, fetchLogs, fetchDailyAnalytics]);
 
-  // Handle workflow execution
+  // Handle workflow execution - NO POLLING, just execute and return
   const handleExecuteWorkflow = async (instanceId: string) => {
     const result = await executeInstance(instanceId);
     if (result.success) {
-      alert(`Workflow execution started for instance: ${instanceId}`);
+      alert(`Workflow execution started for instance: ${instanceId}. Check logs manually after completion.`);
+      
+      // No polling - user must manually check logs when needed
+      console.log(`Workflow ${instanceId} execution started - no automatic log loading`);
+      
     } else {
       alert(`Failed to execute workflow: ${result.error}`);
     }
@@ -300,6 +306,18 @@ export const WorkflowDashboard: React.FC<WorkflowDashboardProps> = ({ onOpenEdit
                             className="bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700 text-sm transition-colors"
                           >
                             Execute
+                          </button>
+                        )}
+                        {(instance.status === 'completed' || instance.status === 'failed') && (
+                          <button
+                            onClick={() => {
+                              // Switch to logs tab and show logs for this instance
+                              setActiveTab('logs');
+                              console.log('Loading logs for instance:', instance.id);
+                            }}
+                            className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 text-sm transition-colors"
+                          >
+                            View Logs
                           </button>
                         )}
                         <button
@@ -531,6 +549,17 @@ export const WorkflowDashboard: React.FC<WorkflowDashboardProps> = ({ onOpenEdit
 
         {/* Additional tabs content... */}
       </div>
+      
+      {/* Workflow Completion Notification */}
+      <WorkflowCompletionNotification
+        instanceId={completedWorkflowId}
+        onClose={() => setCompletedWorkflowId(null)}
+        onViewLogs={() => {
+          // Switch to logs tab to view the logs
+          setActiveTab('logs');
+          setCompletedWorkflowId(null);
+        }}
+      />
     </div>
   );
 };

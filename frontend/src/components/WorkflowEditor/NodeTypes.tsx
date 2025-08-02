@@ -268,6 +268,7 @@ export const nodeTypes = {
   webhook: WebhookNode,
   http_request: APINode,
   google_sheets: GoogleSheetsNode,
+  google_sheets_write: GoogleSheetsNode, // Add the missing google_sheets_write type
   ai_processing: AIProcessingNode,
   data_transform: TransformNode,
   email_sender: NotificationNode,

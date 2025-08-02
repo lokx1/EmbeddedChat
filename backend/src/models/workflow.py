@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Text, DateTime, Boolean, JSON, Integer, ForeignKey
+from sqlalchemy import Column, String, Text, DateTime, Boolean, JSON, Integer, Float, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .database import Base
@@ -61,35 +61,84 @@ class WorkflowExecutionStep(Base):
     error_message = Column(Text)
     execution_time_ms = Column(Integer)
     retry_count = Column(Integer, default=0)
+    
+    # Enhanced logging fields
+    log_level = Column(String(20), default="INFO")  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+    component_version = Column(String(50))  # Version of the component used
+    user_id = Column(String(100))  # User who triggered the workflow
+    tags = Column(JSON)  # Custom tags for categorization
+    metrics = Column(JSON)  # Performance metrics (memory, CPU, etc.)
+    dependencies = Column(JSON)  # What this step depends on
+    artifacts = Column(JSON)  # Generated artifacts (files, URLs, etc.)
+    
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     started_at = Column(DateTime(timezone=True))
     completed_at = Column(DateTime(timezone=True))
     
     # Relationships
     workflow_instance = relationship("WorkflowInstance", back_populates="execution_steps")
+    task_logs = relationship("WorkflowTaskLog", back_populates="execution_step")
 
 
 class WorkflowTaskLog(Base):
-    """Logs for the Google Sheets automation tasks"""
+    """Enhanced logs for workflow tasks with detailed success/failure tracking"""
     __tablename__ = "workflow_task_logs"
     
     id = Column(String, primary_key=True)
-    task_id = Column(String(100), unique=True)  # Unique identifier for each task
-    sheet_id = Column(String(255))  # Google Sheets ID
-    row_number = Column(Integer)  # Row number in the sheet
-    input_description = Column(Text)
-    input_asset_urls = Column(JSON)  # Array of URLs
-    output_format = Column(String(50))  # PNG, JPG, GIF, MP3
-    model_specification = Column(String(100))  # OpenAI, Claude
-    status = Column(String(50))  # pending, processing, success, failed
-    output_file_urls = Column(JSON)  # Array of generated file URLs
-    google_drive_folder_id = Column(String(255))
-    error_message = Column(Text)
+    execution_step_id = Column(String, ForeignKey("workflow_execution_steps.id"))
+    workflow_instance_id = Column(String, ForeignKey("workflow_instances.id"))
+    
+    # Core task information
+    task_id = Column(String(100))  # Unique identifier for each task
+    task_name = Column(String(255), nullable=False)
+    task_type = Column(String(100))  # Type of task (AI processing, Google Sheets, etc.)
+    
+    # Execution details
+    status = Column(String(50))  # pending, processing, success, failed, cancelled
+    log_level = Column(String(20), default="INFO")  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+    
+    # Input/Output tracking
+    input_data = Column(JSON)  # What was fed into the task
+    output_data = Column(JSON)  # What the task produced
+    expected_output = Column(JSON)  # What we expected to get
+    
+    # Success/Failure details
+    success_criteria = Column(JSON)  # What defines success for this task
+    failure_reason = Column(Text)  # Detailed failure explanation
+    error_code = Column(String(50))  # Standardized error code
+    error_stack_trace = Column(Text)  # Full stack trace for debugging
+    
+    # Performance metrics
     processing_time_ms = Column(Integer)
+    memory_usage_mb = Column(Float)
+    cpu_usage_percent = Column(Float)
+    
+    # External integrations
+    sheet_id = Column(String(255))  # Google Sheets ID (if applicable)
+    row_number = Column(Integer)  # Row number in the sheet (if applicable)
+    api_endpoint = Column(String(500))  # External API called (if applicable)
+    api_response_code = Column(Integer)  # HTTP response code (if applicable)
+    
+    # Notification tracking
     email_notification_sent = Column(Boolean, default=False)
     slack_notification_sent = Column(Boolean, default=False)
+    webhook_notification_sent = Column(Boolean, default=False)
+    
+    # Metadata
+    user_id = Column(String(100))  # User who triggered this task
+    session_id = Column(String(100))  # Session identifier
+    correlation_id = Column(String(100))  # For tracing across services
+    tags = Column(JSON)  # Custom tags for categorization
+    context = Column(JSON)  # Additional context information
+    
+    # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    started_at = Column(DateTime(timezone=True))
     completed_at = Column(DateTime(timezone=True))
+    
+    # Relationships
+    execution_step = relationship("WorkflowExecutionStep", back_populates="task_logs")
+    workflow_instance = relationship("WorkflowInstance")
     
     
 class WorkflowDailyReport(Base):

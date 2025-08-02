@@ -34,8 +34,8 @@ def test_google_sheets_write_workflow():
                     "label": "Google Sheets Write",
                     "type": "google_sheets_write",
                     "config": {
-                        "sheet_id": "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms",  # Test sheet
-                        "sheet_name": "Class Data",
+                        "sheet_id": "1Wly5cBDxYoPJE3gJtvyPXUpRBzEzuzYOpZPl_Sj4hIc",  # Your working sheet
+                        "sheet_name": "Result_Test",
                         "range": "A1",
                         "mode": "append",
                         "data_format": "auto"
@@ -70,14 +70,15 @@ def test_google_sheets_write_workflow():
     if save_response.status_code == 200:
         template_data = save_response.json()
         print(f"Template response: {json.dumps(template_data, indent=2)}")
-        template_id = template_data["id"]  # Fix: remove ["data"] level
+        template_id = template_data["data"]["workflow_id"]  # Fix: get workflow_id from data
         print(f"✅ Template created with ID: {template_id}")
         
         # 2. Execute the workflow
         print("\n📊 Executing workflow...")
         execute_payload = {
-            "template_id": template_id,
             "name": f"Test execution {datetime.now().strftime('%H:%M:%S')}",
+            "template_id": template_id,
+            "workflow_data": template_data["data"]["workflow_data"],
             "input_data": {
                 "test_data": [
                     ["Name", "Age", "City"],
@@ -87,12 +88,13 @@ def test_google_sheets_write_workflow():
             }
         }
         
-        execute_response = requests.post(f"{base_url}/workflow/execute", json=execute_payload)
+        execute_response = requests.post(f"{base_url}/workflow/instances", json=execute_payload)
         print(f"Execute response: {execute_response.status_code}")
         
         if execute_response.status_code == 200:
             execution_data = execute_response.json()
-            instance_id = execution_data["data"]["id"]
+            print(f"Execution response: {json.dumps(execution_data, indent=2)}")
+            instance_id = execution_data["instance_id"]  # Fix: use instance_id
             print(f"✅ Workflow execution started with ID: {instance_id}")
             
             # 3. Check execution status

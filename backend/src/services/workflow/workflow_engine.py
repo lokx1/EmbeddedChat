@@ -180,20 +180,37 @@ class AutomationWorkflow(Workflow):
             
             start_time = datetime.now()
             
-            # Generate content
-            if ev.asset_urls:
-                result = await provider.process_with_assets(
-                    ev.input_description,
-                    ev.asset_urls,
-                    ev.output_format,
-                    ev.model_name
-                )
+            # Generate content - handle both sync and async providers
+            if hasattr(provider, '__class__') and 'Ollama' in provider.__class__.__name__:
+                # Ollama provider is sync
+                if ev.asset_urls:
+                    result = provider.process_with_assets(
+                        ev.input_description,
+                        ev.asset_urls,
+                        ev.output_format,
+                        ev.model_name
+                    )
+                else:
+                    result = provider.generate_content(
+                        ev.prompt,
+                        ev.output_format,
+                        ev.model_name
+                    )
             else:
-                result = await provider.generate_content(
-                    ev.prompt,
-                    ev.output_format,
-                    ev.model_name
-                )
+                # Other providers are async
+                if ev.asset_urls:
+                    result = await provider.process_with_assets(
+                        ev.input_description,
+                        ev.asset_urls,
+                        ev.output_format,
+                        ev.model_name
+                    )
+                else:
+                    result = await provider.generate_content(
+                        ev.prompt,
+                        ev.output_format,
+                        ev.model_name
+                    )
             
             execution_time_ms = int((datetime.now() - start_time).total_seconds() * 1000)
             

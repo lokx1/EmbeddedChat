@@ -135,54 +135,61 @@ export interface ApiResponse<T> {
 class EnhancedWorkflowEditorApi {
   private readonly baseUrl = 'http://localhost:8000/api/v1/workflow';
 
-  private async request<T>(
+  private request<T>(
     endpoint: string,
     options: RequestInit = {}
   ): Promise<ApiResponse<T>> {
-    try {
-      const response = await fetch(`${this.baseUrl}${endpoint}`, {
+    return new Promise((resolve) => {
+      fetch(`${this.baseUrl}${endpoint}`, {
         headers: {
           'Content-Type': 'application/json',
           ...options.headers,
         },
         ...options,
+      })
+      .then(response => {
+        return response.text().then(text => {
+          try {
+            const data = JSON.parse(text);
+            if (!response.ok) {
+              throw new Error(data.detail || 'API request failed');
+            }
+            return data;
+          } catch (parseError) {
+            throw new Error('Failed to parse response: ' + text);
+          }
+        });
+      })
+      .then(data => resolve(data))
+      .catch(error => {
+        console.error('API request error:', error);
+        resolve({
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        } as ApiResponse<T>);
       });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.detail || 'API request failed');
-      }
-
-      return data;
-    } catch (error) {
-      console.error('API request error:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      };
-    }
+    });
   }
 
   // Component Management
-  async getComponents(category?: string): Promise<ApiResponse<WorkflowComponentMetadata[]>> {
+  getComponents(category?: string): Promise<ApiResponse<WorkflowComponentMetadata[]>> {
     const params = category ? `?category=${category}` : '';
     return this.request(`/components${params}`);
   }
 
-  async getComponentMetadata(componentType: string): Promise<ApiResponse<WorkflowComponentMetadata>> {
+  getComponentMetadata(componentType: string): Promise<ApiResponse<WorkflowComponentMetadata>> {
     return this.request(`/components/${componentType}`);
   }
 
   // Workflow Instance Management
-  async createInstance(instanceData: Partial<WorkflowInstance>): Promise<ApiResponse<{ instance_id: string }>> {
+  createInstance(instanceData: Partial<WorkflowInstance>): Promise<ApiResponse<{ instance_id: string }>> {
     return this.request('/instances', {
       method: 'POST',
       body: JSON.stringify(instanceData),
     });
   }
 
-  async getInstances(filters?: {
+  getInstances(filters?: {
     status?: string;
     limit?: number;
     offset?: number;
@@ -196,12 +203,12 @@ class EnhancedWorkflowEditorApi {
     return this.request(`/instances${queryString ? `?${queryString}` : ''}`);
   }
 
-  async getInstance(instanceId: string): Promise<ApiResponse<{ instance: WorkflowInstance }>> {
+  getInstance(instanceId: string): Promise<ApiResponse<{ instance: WorkflowInstance }>> {
     return this.request(`/instances/${instanceId}`);
   }
 
   // Workflow Execution
-  async executeInstance(
+  executeInstance(
     instanceId: string,
     inputData?: Record<string, any>
   ): Promise<ApiResponse<{ instance_id: string; status: string }>> {
@@ -211,17 +218,17 @@ class EnhancedWorkflowEditorApi {
     });
   }
 
-  async stopExecution(instanceId: string): Promise<ApiResponse<{ instance_id: string }>> {
+  stopExecution(instanceId: string): Promise<ApiResponse<{ instance_id: string }>> {
     return this.request(`/instances/${instanceId}/stop`, {
       method: 'POST',
     });
   }
 
-  async getExecutionStatus(instanceId: string): Promise<ApiResponse<ExecutionStatus>> {
+  getExecutionStatus(instanceId: string): Promise<ApiResponse<ExecutionStatus>> {
     return this.request(`/instances/${instanceId}/status`);
   }
 
-  async getExecutionLogs(
+  getExecutionLogs(
     instanceId: string,
     limit = 100,
     offset = 0
@@ -236,18 +243,18 @@ class EnhancedWorkflowEditorApi {
   }
 
   // Editor-specific endpoints
-  async saveWorkflow(request: SaveWorkflowRequest): Promise<ApiResponse<{ id: string }>> {
+  saveWorkflow(request: SaveWorkflowRequest): Promise<ApiResponse<{ id: string }>> {
     return this.request('/editor/save', {
       method: 'POST',
       body: JSON.stringify(request),
     });
   }
 
-  async loadWorkflow(workflowId: string): Promise<ApiResponse<WorkflowInstance>> {
+  loadWorkflow(workflowId: string): Promise<ApiResponse<WorkflowInstance>> {
     return this.request(`/editor/load/${workflowId}`);
   }
 
-  async listEditorWorkflows(filters?: {
+  listEditorWorkflows(filters?: {
     category?: string;
     is_public?: boolean;
   }): Promise<ApiResponse<{ workflows: WorkflowInstance[] }>> {

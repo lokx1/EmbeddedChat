@@ -7,7 +7,7 @@ from typing import Dict, Set
 from fastapi import WebSocket, WebSocketDisconnect
 from datetime import datetime
 
-from .execution_engine import ExecutionEvent
+from .execution_engine_new import ExecutionEvent
 
 
 class WorkflowWebSocketManager:

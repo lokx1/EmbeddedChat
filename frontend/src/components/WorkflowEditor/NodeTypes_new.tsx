@@ -258,9 +258,20 @@ export const EndNode = (props: NodeProps) => (
 
 // Node Types mapping
 export const nodeTypes = {
+  // Backend component types (primary)
+  manual_trigger: StartNode,
+  webhook: WebhookNode,
+  http_request: APINode,
+  google_sheets: GoogleSheetsNode,
+  google_sheets_write: GoogleSheetsNode, // Add the missing google_sheets_write type
+  ai_processing: AIProcessingNode,
+  data_transform: TransformNode,
+  email_sender: NotificationNode,
+  database_write: DatabaseNode,
+  
+  // Legacy/compatibility mappings
   start: StartNode,
   schedule: ScheduleNode,
-  webhook: WebhookNode,
   sheets: GoogleSheetsNode,
   database: DatabaseNode,
   api: APINode,
