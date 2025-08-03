@@ -47,9 +47,9 @@ def test_sheets_to_drive_workflow():
                     "label": "Save to Google Drive",
                     "type": "google_drive_write",
                     "config": {
-                        "file_name": "WorkflowResult.json",
+                        "file_name": "WorkflowResult.csv",
                         "folder_id": "14l2RVGPs5Ao1ZwY1ZAjGbvYtwV7ft182",
-                        "file_type": "json",
+                        "file_type": "auto",
                         "content_source": "previous_output",
                         "mimetype": ""
                     }

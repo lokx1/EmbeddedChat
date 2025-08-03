@@ -1649,15 +1649,30 @@ class GoogleDriveWriteComponent(BaseWorkflowComponent):
                 for node_id, node_output in context.previous_outputs.items():
                     debug_logs.append(f"Checking node {node_id}: {type(node_output)}")
                     if isinstance(node_output, dict):
-                        # Try different possible data keys
-                        data_keys = ["data", "results", "records", "values", "output", "content"]
-                        for key in data_keys:
-                            if key in node_output and node_output[key]:
-                                content_data = node_output[key]
-                                debug_logs.append(f"Found data in node {node_id}.{key}: {type(content_data)}")
-                                break
-                        if content_data:
+                        # Check for AI Processing data first (has results_for_sheets - perfect for CSV)
+                        if 'results_for_sheets' in node_output and isinstance(node_output['results_for_sheets'], list):
+                            content_data = {'values': node_output['results_for_sheets']}  # Wrap in sheets format
+                            debug_logs.append(f"Found AI Processing data in node {node_id}: {len(node_output['results_for_sheets'])} rows")
                             break
+                        # Check for Google Sheets data (priority for CSV conversion)
+                        elif 'values' in node_output and isinstance(node_output['values'], list):
+                            content_data = node_output  # Keep the full sheets structure
+                            debug_logs.append(f"Found Google Sheets data in node {node_id}: {len(node_output['values'])} rows")
+                            break
+                        elif 'records' in node_output and isinstance(node_output['records'], list):
+                            content_data = node_output  # Keep the full sheets structure  
+                            debug_logs.append(f"Found Google Sheets records in node {node_id}: {len(node_output['records'])} records")
+                            break
+                        else:
+                            # Try different possible data keys for other formats
+                            data_keys = ["data", "results", "output", "content"]
+                            for key in data_keys:
+                                if key in node_output and node_output[key]:
+                                    content_data = node_output[key]
+                                    debug_logs.append(f"Found data in node {node_id}.{key}: {type(content_data)}")
+                                    break
+                            if content_data:
+                                break
                         
             elif content_source == "input_data":
                 content_data = context.input_data.get("content_data")
@@ -1673,6 +1688,12 @@ class GoogleDriveWriteComponent(BaseWorkflowComponent):
                     logs=debug_logs + [error_msg],
                     next_steps=["error"]
                 )
+            
+            # Auto-detect and convert Google Sheets data to CSV if file_type is auto or csv
+            if file_type in ["auto", "csv"] and isinstance(content_data, dict):
+                if 'values' in content_data or 'records' in content_data:
+                    file_type = "csv"  # Force CSV for Google Sheets data
+                    debug_logs.append("Auto-detected Google Sheets data, converting to CSV format")
             
             # Convert content to bytes based on file type
             file_content = self._prepare_file_content(content_data, file_type)
@@ -1930,7 +1951,42 @@ class GoogleDriveWriteComponent(BaseWorkflowComponent):
             import io
             
             output = io.StringIO()
-            if isinstance(data, list):
+            
+            # Handle Google Sheets data structure specially
+            if isinstance(data, dict):
+                if 'values' in data and isinstance(data['values'], list):
+                    # Google Sheets 'values' format - list of lists (includes AI processing wrapped data)
+                    writer = csv.writer(output)
+                    for row in data['values']:
+                        writer.writerow(row)
+                elif 'results_for_sheets' in data and isinstance(data['results_for_sheets'], list):
+                    # AI Processing 'results_for_sheets' format - direct list of lists
+                    writer = csv.writer(output)
+                    for row in data['results_for_sheets']:
+                        writer.writerow(row)
+                elif 'records' in data and isinstance(data['records'], list):
+                    # Google Sheets 'records' format - list of dictionaries
+                    records = data['records']
+                    if len(records) > 0 and isinstance(records[0], dict):
+                        fieldnames = records[0].keys()
+                        writer = csv.DictWriter(output, fieldnames=fieldnames)
+                        writer.writeheader()
+                        for row in records:
+                            writer.writerow(row)
+                    else:
+                        # Fallback to simple format
+                        writer = csv.writer(output)
+                        writer.writerow(['Data'])
+                        for record in records:
+                            writer.writerow([str(record)])
+                else:
+                    # Regular dict - convert to key-value CSV
+                    writer = csv.writer(output)
+                    writer.writerow(['Key', 'Value'])
+                    for key, value in data.items():
+                        writer.writerow([key, str(value)])
+            elif isinstance(data, list):
+                writer = csv.writer(output)
                 if len(data) > 0:
                     if isinstance(data[0], dict):
                         # List of dictionaries - convert to CSV
@@ -1941,12 +1997,10 @@ class GoogleDriveWriteComponent(BaseWorkflowComponent):
                             writer.writerow(row)
                     elif isinstance(data[0], list):
                         # List of lists - write as CSV
-                        writer = csv.writer(output)
                         for row in data:
                             writer.writerow(row)
                     else:
                         # List of primitives
-                        writer = csv.writer(output)
                         for item in data:
                             writer.writerow([item])
             else:
