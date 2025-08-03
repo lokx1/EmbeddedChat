@@ -269,6 +269,7 @@ export const nodeTypes = {
   http_request: APINode,
   google_sheets: GoogleSheetsNode,
   google_sheets_write: GoogleSheetsNode,  // Add missing write component
+  google_drive_write: GoogleDriveNode,   // Add Google Drive Write component
   ai_processing: AIProcessingNode,
   data_transform: TransformNode,
   email_sender: NotificationNode,

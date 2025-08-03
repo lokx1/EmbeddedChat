@@ -1551,10 +1551,13 @@ class GoogleDriveWriteComponent(BaseWorkflowComponent):
             type="google_drive_write",
             name="Google Drive Write",
             description="Upload files and data to Google Drive",
-            category="Output & Actions",
+            category=ComponentCategory.OUTPUT_ACTIONS,
+            icon="CloudArrowUpIcon",
+            color="from-green-500 via-teal-600 to-blue-600",
             parameters=[
                 ComponentParameter(
                     name="file_name",
+                    label="File Name",
                     type=ParameterType.STRING,
                     required=True,
                     description="Name of the file to upload",
@@ -1562,6 +1565,7 @@ class GoogleDriveWriteComponent(BaseWorkflowComponent):
                 ),
                 ComponentParameter(
                     name="folder_id",
+                    label="Folder ID",
                     type=ParameterType.STRING,
                     required=False,
                     description="Google Drive folder ID (optional)",
@@ -1569,32 +1573,45 @@ class GoogleDriveWriteComponent(BaseWorkflowComponent):
                 ),
                 ComponentParameter(
                     name="file_type",
+                    label="File Type",
                     type=ParameterType.SELECT,
                     required=False,
                     description="Type of file to create",
-                    options=["auto", "text", "json", "csv", "binary"],
+                    options=[
+                        {"label": "Auto Detect", "value": "auto"},
+                        {"label": "Text", "value": "text"},
+                        {"label": "JSON", "value": "json"},
+                        {"label": "CSV", "value": "csv"},
+                        {"label": "Binary", "value": "binary"}
+                    ],
                     default_value="auto"
                 ),
                 ComponentParameter(
                     name="content_source",
+                    label="Content Source",
                     type=ParameterType.SELECT,
                     required=False,
                     description="Source of file content",
-                    options=["previous_output", "input_data", "generated"],
+                    options=[
+                        {"label": "Previous Output", "value": "previous_output"},
+                        {"label": "Input Data", "value": "input_data"},
+                        {"label": "Generated", "value": "generated"}
+                    ],
                     default_value="previous_output"
                 ),
                 ComponentParameter(
                     name="mimetype",
+                    label="MIME Type",
                     type=ParameterType.STRING,
                     required=False,
                     description="MIME type of the file (auto-detected if empty)",
                     default_value=""
                 )
             ],
-            inputs=[
+            input_handles=[
                 ComponentHandle(id="input", type="target", position="left", label="Data")
             ],
-            outputs=[
+            output_handles=[
                 ComponentHandle(id="success", type="source", position="right", label="Success"),
                 ComponentHandle(id="error", type="source", position="bottom", label="Error")
             ]
@@ -1660,68 +1677,51 @@ class GoogleDriveWriteComponent(BaseWorkflowComponent):
             # Convert content to bytes based on file type
             file_content = self._prepare_file_content(content_data, file_type)
             
-            # Try to use real Google Drive API if available
-            debug_logs.append(f"GOOGLE_DRIVE_AVAILABLE: {GOOGLE_DRIVE_AVAILABLE}")
-            if GOOGLE_DRIVE_AVAILABLE:
-                debug_logs.append("Attempting to upload to Google Drive API...")
-                success, result_data = await self._upload_to_google_drive(
-                    file_content, file_name, folder_id, mimetype
-                )
-                
-                debug_logs.append(f"Google Drive API result: success={success}, data={result_data}")
-                
-                if success:
-                    execution_time = int((time.time() - start_time) * 1000)
-                    return ExecutionResult(
-                        success=True,
-                        output_data=result_data,
-                        execution_time_ms=execution_time,
-                        logs=debug_logs + [
-                            f"Successfully connected to Google Drive API",
-                            f"Uploading file '{file_name}' to Google Drive",
-                            f"Folder ID: {folder_id or 'Root'}",
-                            f"File type: {file_type}",
-                            f"Successfully uploaded file",
-                            f"Operation completed in {execution_time}ms"
-                        ],
-                        next_steps=["success"]
-                    )
-                else:
-                    # Fall back to simulation if API fails
-                    debug_logs.append(f"Google Drive API failed, falling back to simulation: {result_data}")
-            else:
-                debug_logs.append("Google Drive API not available, using simulation mode")
+            # Smart file naming logic
+            final_file_name = await self._generate_smart_filename(file_name, folder_id)
+            debug_logs.append(f"Final file name: {final_file_name}")
             
-            # Simulation mode (fallback)
-            result_data = {
-                "operation": "upload_simulation",
-                "file_info": {
-                    "filename": file_name,
-                    "folder_id": folder_id or "root",
-                    "file_type": file_type,
-                    "size": len(file_content),
-                    "mimetype": mimetype or "auto-detected"
-                },
-                "timestamp": datetime.now().isoformat(),
-                "status": "simulated"
-            }
-            
-            execution_time = int((time.time() - start_time) * 1000)
-            
-            return ExecutionResult(
-                success=True,
-                output_data=result_data,
-                execution_time_ms=execution_time,
-                logs=debug_logs + [
-                    f"Connected to Google Drive (simulation)",
-                    f"Uploading file '{file_name}' to Google Drive",
-                    f"Folder ID: {folder_id or 'Root'}",
-                    f"File type: {file_type}",
-                    f"Successfully uploaded file (simulated)",
-                    f"Operation completed in {execution_time}ms"
-                ],
-                next_steps=["success"]
+            # Try OAuth service for real upload
+            oauth_success, oauth_result = await self._try_oauth_upload(
+                file_content, final_file_name, folder_id, mimetype
             )
+            
+            if oauth_success:
+                debug_logs.append("✅ Real OAuth upload successful!")
+                execution_time = int((time.time() - start_time) * 1000)
+                return ExecutionResult(
+                    success=True,
+                    output_data=oauth_result,
+                    execution_time_ms=execution_time,
+                    logs=debug_logs + [
+                        f"Successfully connected to Google Drive (OAuth)",
+                        f"Uploading file '{final_file_name}' to Google Drive",
+                        f"Folder ID: {folder_id or 'Root'}",
+                        f"File type: {file_type}",
+                        f"Successfully uploaded file via OAuth",
+                        f"File ID: {oauth_result.get('file_id', 'N/A')}",
+                        f"View link: {oauth_result.get('web_view_link', 'N/A')}",
+                        f"Operation completed in {execution_time}ms"
+                    ],
+                    next_steps=["success"]
+                )
+            else:
+                # OAuth failed - return error instead of fallback
+                error_msg = oauth_result.get('error', 'OAuth upload failed')
+                debug_logs.append(f"❌ OAuth upload failed: {error_msg}")
+                
+                return ExecutionResult(
+                    success=False,
+                    output_data={},
+                    error=f"Google Drive upload failed: {error_msg}",
+                    execution_time_ms=int((time.time() - start_time) * 1000),
+                    logs=debug_logs + [
+                        f"Failed to upload '{final_file_name}' to Google Drive",
+                        f"Error: {error_msg}",
+                        "Make sure OAuth credentials are configured correctly"
+                    ],
+                    next_steps=["error"]
+                )
             
         except Exception as e:
             return ExecutionResult(
@@ -1732,6 +1732,159 @@ class GoogleDriveWriteComponent(BaseWorkflowComponent):
                 logs=[f"Error uploading to Google Drive: {str(e)}"],
                 next_steps=["error"]
             )
+    
+    async def _generate_smart_filename(self, original_name: str, folder_id: str) -> str:
+        """Generate smart filename with conflict resolution"""
+        from datetime import datetime
+        
+        current_date = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        # If filename doesn't start with "Result_", add it
+        if not original_name.startswith("Result_"):
+            # Extract file extension
+            if "." in original_name:
+                name_part, extension = original_name.rsplit(".", 1)
+                new_name = f"Result_{name_part}_{current_date}.{extension}"
+            else:
+                new_name = f"Result_{original_name}_{current_date}"
+        else:
+            # Already has Result_ prefix, just add date if not present
+            if current_date not in original_name:
+                if "." in original_name:
+                    name_part, extension = original_name.rsplit(".", 1)
+                    new_name = f"{name_part}_{current_date}.{extension}"
+                else:
+                    new_name = f"{original_name}_{current_date}"
+            else:
+                new_name = original_name
+        
+        # Check if OAuth service is available for real upload
+        if await self._check_oauth_available():
+            try:
+                # Use OAuth service to check if file exists
+                unique_name = await self._ensure_unique_filename_oauth(new_name, folder_id)
+                return unique_name
+            except Exception as e:
+                # Fallback to generated name if OAuth check fails
+                pass
+        
+        # Fallback: check with service account or return generated name
+        if GOOGLE_DRIVE_AVAILABLE:
+            try:
+                # Check if file exists and generate unique name if needed
+                unique_name = await self._ensure_unique_filename(new_name, folder_id)
+                return unique_name
+            except Exception as e:
+                # Fallback to generated name if checking fails
+                return new_name
+        
+        return new_name
+    
+    async def _ensure_unique_filename(self, filename: str, folder_id: str) -> str:
+        """Ensure filename is unique in the target folder"""
+        try:
+            drive_service = GoogleDriveService()
+            if not await drive_service.authenticate():
+                return filename
+            
+            # List files in the folder to check for conflicts
+            success, files_data = await drive_service.list_files(folder_id)
+            
+            if not success:
+                return filename
+            
+            existing_files = files_data.get('files', [])
+            existing_names = [f.get('name', '') for f in existing_files]
+            
+            if filename not in existing_names:
+                return filename
+            
+            # File exists, generate new name with timestamp
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]  # Include milliseconds
+            
+            if "." in filename:
+                name_part, extension = filename.rsplit(".", 1)
+                return f"{name_part}_{timestamp}.{extension}"
+            else:
+                return f"{filename}_{timestamp}"
+                
+        except Exception as e:
+            # If anything fails, just return original name
+            return filename
+    
+    async def _try_oauth_upload(
+        self, 
+        file_content: bytes, 
+        filename: str, 
+        folder_id: str, 
+        mimetype: str
+    ) -> Tuple[bool, Dict[str, Any]]:
+        """Try to upload using OAuth service"""
+        try:
+            from ..google_drive_oauth_service import oauth_drive_service
+            
+            success, result_data = await oauth_drive_service.upload_file(
+                file_content=file_content,
+                filename=filename,
+                folder_id=folder_id if folder_id else None,
+                mimetype=mimetype if mimetype else None
+            )
+            
+            return success, result_data
+                
+        except Exception as e:
+            return False, {"error": f"OAuth service error: {str(e)}"}
+    
+    async def _check_oauth_available(self) -> bool:
+        """Check if OAuth service is available"""
+        try:
+            from ..google_drive_oauth_service import oauth_drive_service
+            import os
+            
+            # Check if OAuth token exists
+            token_file = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 
+                'src', 'google_drive_token.json'
+            )
+            return os.path.exists(token_file)
+            
+        except Exception:
+            return False
+    
+    async def _ensure_unique_filename_oauth(self, filename: str, folder_id: str) -> str:
+        """Ensure filename is unique using OAuth service"""
+        try:
+            from ..google_drive_oauth_service import oauth_drive_service
+            
+            if not await oauth_drive_service.authenticate():
+                return filename
+            
+            # List files in the folder to check for conflicts
+            success, files_data = await oauth_drive_service.list_files(folder_id)
+            
+            if not success:
+                return filename
+            
+            existing_files = files_data.get('files', [])
+            existing_names = [f.get('name', '') for f in existing_files]
+            
+            if filename not in existing_names:
+                return filename
+            
+            # File exists, generate new name with timestamp
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]  # Include milliseconds
+            
+            if "." in filename:
+                name_part, extension = filename.rsplit(".", 1)
+                return f"{name_part}_{timestamp}.{extension}"
+            else:
+                return f"{filename}_{timestamp}"
+                
+        except Exception as e:
+            # If anything fails, just return original name
+            return filename
     
     async def _upload_to_google_drive(
         self, 
