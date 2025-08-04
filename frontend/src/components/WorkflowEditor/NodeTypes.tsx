@@ -273,6 +273,7 @@ export const nodeTypes = {
   ai_processing: AIProcessingNode,
   data_transform: TransformNode,
   email_sender: NotificationNode,
+  email_report: NotificationNode,  // Add Email Report component
   database_write: DatabaseNode,
   
   // Additional triggers

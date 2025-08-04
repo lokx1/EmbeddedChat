@@ -20,6 +20,13 @@ from ...services.workflow.google_services import GoogleServicesManager
 from ...services.workflow.notifications import NotificationManager, EmailService, SlackService
 from ...services.workflow.analytics import AnalyticsService
 from ...services.workflow.ai_providers import AIProviderFactory
+from ...services.workflow.email_report_service import (
+    EmailReportService, 
+    WorkflowExecutionSummary, 
+    WorkflowAnalytics,
+    create_execution_summary_from_data,
+    process_execution_logs_for_report
+)
 
 router = APIRouter(prefix="/workflow", tags=["workflow"])
 
@@ -102,11 +109,13 @@ def get_workflow_executor(db: Session) -> 'WorkflowExecutor':
         # Initialize services (these would be configured from environment variables)
         google_services = GoogleServicesManager("path/to/credentials.json")
         
+        from ...core.config import settings
         email_service = EmailService(
-            smtp_server="smtp.gmail.com",
-            smtp_port=587,
-            username="your-email@gmail.com",
-            password="your-password"
+            smtp_server=settings.SMTP_SERVER,
+            smtp_port=settings.SMTP_PORT,
+            username=settings.SMTP_USERNAME,
+            password=settings.SMTP_PASSWORD,
+            use_tls=settings.SMTP_USE_TLS
         )
         
         slack_service = SlackService(
@@ -259,11 +268,25 @@ async def create_workflow_instance(
 ):
     """Create a new workflow instance"""
     try:
+        # If template_id is provided, get workflow_data from template
+        workflow_data = instance_data.get("workflow_data")
+        if not workflow_data and instance_data.get("template_id"):
+            template = db.query(WorkflowTemplate).filter(
+                WorkflowTemplate.id == instance_data["template_id"]
+            ).first()
+            if template:
+                workflow_data = template.template_data
+            else:
+                raise HTTPException(status_code=404, detail="Template not found")
+        
+        if not workflow_data:
+            raise HTTPException(status_code=400, detail="workflow_data is required")
+        
         instance = WorkflowInstance(
             id=str(uuid.uuid4()),
             name=instance_data["name"],
             template_id=instance_data.get("template_id"),
-            workflow_data=instance_data["workflow_data"],
+            workflow_data=workflow_data,
             input_data=instance_data.get("input_data"),
             created_by=instance_data.get("created_by"),
             status="draft"
@@ -1066,3 +1089,464 @@ async def list_editor_workflows(
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ===============================
+# Email Report Endpoints
+# ===============================
+
+@router.post("/instances/{instance_id}/send-report")
+async def send_workflow_execution_report(
+    instance_id: str,
+    request_data: Dict[str, Any],
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """
+    Send comprehensive workflow execution report via email
+    
+    Expected request_data:
+    {
+        "recipient_email": "user@example.com",
+        "include_analytics": true,
+        "include_detailed_logs": true
+    }
+    """
+    try:
+        # Validate inputs
+        recipient_email = request_data.get("recipient_email")
+        if not recipient_email:
+            raise HTTPException(status_code=400, detail="recipient_email is required")
+        
+        include_analytics = request_data.get("include_analytics", True)
+        include_detailed_logs = request_data.get("include_detailed_logs", True)
+        
+        # Get workflow instance
+        instance = db.query(WorkflowInstance).filter(
+            WorkflowInstance.id == instance_id
+        ).first()
+        
+        if not instance:
+            raise HTTPException(status_code=404, detail="Workflow instance not found")
+        
+        # Get execution logs and events
+        execution_steps = db.query(WorkflowExecutionStep).filter(
+            WorkflowExecutionStep.workflow_instance_id == instance_id
+        ).order_by(WorkflowExecutionStep.created_at.asc()).all()
+        
+        # Convert to format expected by email service
+        execution_logs = []
+        execution_events = []
+        
+        for step in execution_steps:
+            # Add as log entry
+            log_level = 'error' if step.status == 'failed' else 'success' if step.status == 'completed' else 'info'
+            execution_logs.append({
+                'timestamp': step.created_at.isoformat() if step.created_at else datetime.now().isoformat(),
+                'level': log_level,
+                'message': f"Step {step.step_name}: {step.status}",
+                'node_id': step.node_id,
+                'execution_time': step.execution_time_ms,
+                'details': {
+                    'step_type': step.step_type,
+                    'input_data': step.input_data,
+                    'output_data': step.output_data,
+                    'error_message': step.error_message
+                }
+            })
+            
+            # Add as event
+            execution_events.append({
+                'timestamp': step.started_at.isoformat() if step.started_at else step.created_at.isoformat(),
+                'event_type': f"step_{step.status}",
+                'data': {
+                    'node_id': step.node_id,
+                    'step_name': step.step_name,
+                    'step_type': step.step_type,
+                    'execution_time_ms': step.execution_time_ms
+                }
+            })
+        
+        # Create execution summary
+        execution_data = {
+            'start_time': instance.started_at.isoformat() if instance.started_at else instance.created_at.isoformat(),
+            'end_time': instance.completed_at.isoformat() if instance.completed_at else None,
+            'status': instance.status,
+            'total_steps': len(execution_steps),
+            'completed_steps': len([s for s in execution_steps if s.status == 'completed']),
+            'failed_steps': len([s for s in execution_steps if s.status == 'failed'])
+        }
+        
+        execution_summary = create_execution_summary_from_data(
+            workflow_name=instance.name,
+            instance_id=instance_id,
+            execution_data=execution_data,
+            logs=execution_logs,
+            events=execution_events
+        )
+        
+        # Initialize email service using settings
+        try:
+            from ...core.config import settings
+            email_service = EmailService(
+                smtp_server=settings.SMTP_SERVER,
+                smtp_port=settings.SMTP_PORT,
+                username=settings.SMTP_USERNAME,
+                password=settings.SMTP_PASSWORD,
+                use_tls=settings.SMTP_USE_TLS
+            )
+            email_report_service = EmailReportService(email_service)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to initialize email service: {str(e)}")
+        
+        # Send report in background
+        background_tasks.add_task(
+            _send_execution_report_background,
+            email_report_service,
+            recipient_email,
+            execution_summary,
+            execution_logs,
+            execution_events,
+            include_analytics,
+            include_detailed_logs
+        )
+        
+        return {
+            "success": True,
+            "message": "Workflow execution report is being sent",
+            "recipient_email": recipient_email,
+            "instance_id": instance_id
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/reports/daily-analytics")
+async def send_daily_analytics_report(
+    request_data: Dict[str, Any],
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """
+    Send daily analytics report via email
+    
+    Expected request_data:
+    {
+        "recipient_email": "user@example.com",
+        "date": "2025-08-04"  # Optional, defaults to today
+    }
+    """
+    try:
+        # Validate inputs
+        recipient_email = request_data.get("recipient_email")
+        if not recipient_email:
+            raise HTTPException(status_code=400, detail="recipient_email is required")
+        
+        report_date_str = request_data.get("date", datetime.now().strftime('%Y-%m-%d'))
+        report_date = datetime.strptime(report_date_str, '%Y-%m-%d')
+        
+        # Add timezone awareness to avoid offset-naive errors
+        from datetime import timezone
+        report_date = report_date.replace(tzinfo=timezone.utc)
+        
+        date_range = (
+            report_date.replace(hour=0, minute=0, second=0, microsecond=0),
+            report_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+        )
+        
+        # Get analytics data from database
+        instances_query = db.query(WorkflowInstance).filter(
+            WorkflowInstance.created_at >= date_range[0],
+            WorkflowInstance.created_at <= date_range[1]
+        )
+        
+        total_executions = instances_query.count()
+        successful_executions = instances_query.filter(WorkflowInstance.status == 'completed').count()
+        failed_executions = instances_query.filter(WorkflowInstance.status == 'failed').count()
+        
+        # Calculate average execution time
+        completed_instances = instances_query.filter(
+            WorkflowInstance.status == 'completed',
+            WorkflowInstance.started_at.isnot(None),
+            WorkflowInstance.completed_at.isnot(None)
+        ).all()
+        
+        if completed_instances:
+            execution_times = []
+            for instance in completed_instances:
+                if instance.started_at and instance.completed_at:
+                    # Ensure both timestamps have timezone info
+                    started_at = instance.started_at
+                    completed_at = instance.completed_at
+                    
+                    # Add UTC timezone if none
+                    if started_at.tzinfo is None:
+                        started_at = started_at.replace(tzinfo=timezone.utc)
+                    if completed_at.tzinfo is None:
+                        completed_at = completed_at.replace(tzinfo=timezone.utc)
+                    
+                    duration = (completed_at - started_at).total_seconds()
+                    execution_times.append(duration)
+            average_execution_time = sum(execution_times) / len(execution_times) if execution_times else 0
+        else:
+            average_execution_time = 0
+        
+        # Get error breakdown from execution steps
+        error_steps = db.query(WorkflowExecutionStep).join(WorkflowInstance).filter(
+            WorkflowInstance.created_at >= date_range[0],
+            WorkflowInstance.created_at <= date_range[1],
+            WorkflowExecutionStep.status == 'failed'
+        ).all()
+        
+        error_breakdown = {}
+        for step in error_steps:
+            error_type = step.step_type or 'unknown'
+            error_breakdown[error_type] = error_breakdown.get(error_type, 0) + 1
+        
+        # Create analytics object
+        analytics = WorkflowAnalytics(
+            total_executions=total_executions,
+            successful_executions=successful_executions,
+            failed_executions=failed_executions,
+            average_execution_time=average_execution_time,
+            success_rate_percentage=(successful_executions / total_executions * 100) if total_executions > 0 else 0,
+            error_breakdown=error_breakdown,
+            performance_trend=[]  # Could be enhanced with hourly data
+        )
+        
+        # Get recent executions for the report
+        recent_instances = instances_query.order_by(WorkflowInstance.created_at.desc()).limit(10).all()
+        recent_executions = []
+        
+        for instance in recent_instances:
+            execution_data = {
+                'start_time': instance.started_at.isoformat() if instance.started_at else instance.created_at.isoformat(),
+                'end_time': instance.completed_at.isoformat() if instance.completed_at else None,
+                'status': instance.status,
+                'total_steps': 0,  # Would need to count from execution steps
+                'completed_steps': 0,
+                'failed_steps': 0
+            }
+            
+            # Get step counts for this instance
+            steps = db.query(WorkflowExecutionStep).filter(
+                WorkflowExecutionStep.workflow_instance_id == instance.id
+            ).all()
+            
+            execution_data['total_steps'] = len(steps)
+            execution_data['completed_steps'] = len([s for s in steps if s.status == 'completed'])
+            execution_data['failed_steps'] = len([s for s in steps if s.status == 'failed'])
+            
+            execution_summary = create_execution_summary_from_data(
+                workflow_name=instance.name,
+                instance_id=instance.id,
+                execution_data=execution_data,
+                logs=[],
+                events=[]
+            )
+            recent_executions.append(execution_summary)
+        
+        # Initialize email service using settings
+        try:
+            from ...core.config import settings
+            email_service = EmailService(
+                smtp_server=settings.SMTP_SERVER,
+                smtp_port=settings.SMTP_PORT,
+                username=settings.SMTP_USERNAME,
+                password=settings.SMTP_PASSWORD,
+                use_tls=settings.SMTP_USE_TLS
+            )
+            email_report_service = EmailReportService(email_service)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to initialize email service: {str(e)}")
+        
+        # Send report in background
+        background_tasks.add_task(
+            _send_daily_analytics_report_background,
+            email_report_service,
+            recipient_email,
+            analytics,
+            date_range,
+            recent_executions
+        )
+        
+        return {
+            "success": True,
+            "message": "Daily analytics report is being sent",
+            "recipient_email": recipient_email,
+            "report_date": report_date_str,
+            "analytics_summary": {
+                "total_executions": total_executions,
+                "successful_executions": successful_executions,
+                "failed_executions": failed_executions,
+                "success_rate": analytics.success_rate_percentage
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/reports/execution")
+async def send_execution_report(
+    request_data: Dict[str, Any],
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """
+    Send execution report via email
+    
+    Expected request_data:
+    {
+        "recipient_email": "user@example.com",
+        "workflow_name": "Test Workflow",
+        "subject_prefix": "Workflow Report"  # Optional
+    }
+    """
+    try:
+        # Validate inputs
+        recipient_email = request_data.get("recipient_email")
+        if not recipient_email:
+            raise HTTPException(status_code=400, detail="recipient_email is required")
+        
+        workflow_name = request_data.get("workflow_name", "Test Workflow")
+        subject_prefix = request_data.get("subject_prefix", "Workflow Report")
+        
+        # Create a sample execution summary for testing
+        from ...services.workflow.email_report_service import create_execution_summary_from_data
+        
+        execution_data = {
+            'start_time': datetime.now().isoformat(),
+            'end_time': datetime.now().isoformat(),
+            'status': 'completed',
+            'total_steps': 3,
+            'completed_steps': 3,
+            'failed_steps': 0
+        }
+        
+        execution_summary = create_execution_summary_from_data(
+            workflow_name=workflow_name,
+            instance_id="test-instance-" + str(datetime.now().timestamp()),
+            execution_data=execution_data,
+            logs=[
+                {
+                    'timestamp': datetime.now().isoformat(),
+                    'level': 'INFO',
+                    'message': 'Workflow started successfully'
+                },
+                {
+                    'timestamp': datetime.now().isoformat(),
+                    'level': 'INFO',
+                    'message': 'All steps completed successfully'
+                }
+            ],
+            events=[
+                {
+                    'timestamp': datetime.now().isoformat(),
+                    'event_type': 'workflow_started',
+                    'data': {'workflow_name': workflow_name}
+                },
+                {
+                    'timestamp': datetime.now().isoformat(),
+                    'event_type': 'workflow_completed',
+                    'data': {'duration': '30s', 'status': 'success'}
+                }
+            ]
+        )
+        
+        # Initialize email service
+        try:
+            from ...services.workflow.email_report_service import EmailReportService
+            from ...services.workflow.notifications import EmailService
+            from ...core.config import settings
+            
+            # Create EmailService first
+            email_service = EmailService(
+                smtp_server=settings.SMTP_SERVER,
+                smtp_port=settings.SMTP_PORT,
+                username=settings.SMTP_USERNAME,
+                password=settings.SMTP_PASSWORD,
+                use_tls=settings.SMTP_USE_TLS
+            )
+            
+            # Create EmailReportService with EmailService
+            email_report_service = EmailReportService(email_service)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to initialize email service: {str(e)}")
+        
+        # Send report in background
+        background_tasks.add_task(
+            _send_execution_report_background,
+            email_report_service,
+            recipient_email,
+            execution_summary,
+            [],  # logs
+            [],  # events
+            True,  # include_analytics
+            True   # include_detailed_logs
+        )
+        
+        return {
+            "success": True,
+            "message": "Execution report is being sent",
+            "recipient_email": recipient_email,
+            "workflow_name": workflow_name
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+async def _send_execution_report_background(
+    email_report_service: EmailReportService,
+    recipient_email: str,
+    execution_summary: WorkflowExecutionSummary,
+    execution_logs: List[Dict[str, Any]],
+    execution_events: List[Dict[str, Any]],
+    include_analytics: bool,
+    include_detailed_logs: bool
+):
+    """Send execution report in background"""
+    try:
+        result = await email_report_service.send_workflow_completion_report(
+            recipient_email=recipient_email,
+            execution_summary=execution_summary,
+            execution_logs=execution_logs,
+            execution_events=execution_events,
+            include_analytics=include_analytics,
+            include_detailed_logs=include_detailed_logs
+        )
+        print(f"Execution report sent: {result}")
+    except Exception as e:
+        print(f"Failed to send execution report: {str(e)}")
+
+
+async def _send_daily_analytics_report_background(
+    email_report_service: EmailReportService,
+    recipient_email: str,
+    analytics: WorkflowAnalytics,
+    date_range: tuple,
+    recent_executions: List[WorkflowExecutionSummary]
+):
+    """Send daily analytics report in background"""
+    try:
+        result = await email_report_service.send_daily_analytics_report(
+            recipient_email=recipient_email,
+            analytics=analytics,
+            date_range=date_range,
+            recent_executions=recent_executions
+        )
+        print(f"Daily analytics report sent: {result}")
+    except Exception as e:
+        print(f"Failed to send daily analytics report: {str(e)}")
+
+
+# Add missing import for os
+import os

@@ -351,6 +351,7 @@ class ComponentRegistry:
         self.register_component(AIProcessingComponent)
         self.register_component(WebhookComponent)
         self.register_component(EmailSenderComponent)
+        self.register_component(EmailReportComponent)  # Add Email Report Component
         self.register_component(DatabaseWriteComponent)
     
     def register_component(self, component_class: Type[BaseWorkflowComponent]):
@@ -1344,42 +1345,187 @@ class EmailSenderComponent(BaseWorkflowComponent):
         start_time = time.time()
         
         try:
+            # Get email configuration from input data
             to_email = context.input_data.get("to_email")
-            subject = context.input_data.get("subject")
-            body_template = context.input_data.get("body")
-            from_email = context.input_data.get("from_email", "noreply@workflow.app")
+            subject = context.input_data.get("subject", "")
+            body_template = context.input_data.get("body", "")
+            email_type = context.input_data.get("email_type", "html")
+            include_attachments = context.input_data.get("include_attachments", False)
+            from_name = context.input_data.get("from_name")
             
-            # Replace {input} in body with actual input data
-            input_str = json.dumps(context.previous_outputs, indent=2)
-            body = body_template.replace("{input}", input_str)
+            # Validate required fields
+            if not to_email:
+                return ExecutionResult(
+                    success=False,
+                    output_data={},
+                    error="Recipient email is required",
+                    execution_time_ms=int((time.time() - start_time) * 1000),
+                    logs=["Error: Recipient email is required"],
+                    next_steps=["error"]
+                )
             
-            # TODO: Implement actual email sending
-            # For now, simulate email sending
-            await asyncio.sleep(1)  # Simulate sending delay
+            if not subject:
+                return ExecutionResult(
+                    success=False,
+                    output_data={},
+                    error="Email subject is required", 
+                    execution_time_ms=int((time.time() - start_time) * 1000),
+                    logs=["Error: Email subject is required"],
+                    next_steps=["error"]
+                )
+            
+            # Process email content with dynamic data
+            processed_subject = self._process_email_template(subject, context)
+            processed_body = self._process_email_template(body_template, context)
+            
+            # Create EmailService instance
+            from ...core.config import settings
+            from .notifications import EmailService
+            
+            email_service = EmailService(
+                smtp_server=settings.SMTP_SERVER,
+                smtp_port=settings.SMTP_PORT,
+                username=settings.SMTP_USERNAME,
+                password=settings.SMTP_PASSWORD,
+                use_tls=settings.SMTP_USE_TLS
+            )
+            
+            # Prepare email data
+            email_data = {
+                "to_email": to_email,
+                "subject": processed_subject,
+                "body": processed_body,
+                "from_email": settings.SMTP_FROM_EMAIL,
+                "is_html": email_type == "html"
+            }
+            
+            # Add from name if specified
+            if from_name:
+                email_data["from_email"] = f"{from_name} <{settings.SMTP_FROM_EMAIL}>"
+            
+            # Add attachments if requested
+            if include_attachments and context.previous_outputs:
+                attachments = self._prepare_email_attachments(context)
+                if attachments:
+                    email_data["attachments"] = attachments
+            
+            # Send email
+            result = await email_service.send_email(**email_data)
             
             execution_time = int((time.time() - start_time) * 1000)
             
-            return ExecutionResult(
-                success=True,
-                output_data={
-                    "email_sent": True,
-                    "to": to_email,
-                    "subject": subject,
-                    "sent_at": time.time()
-                },
-                execution_time_ms=execution_time,
-                logs=[f"Email sent to {to_email} with subject '{subject}'"],
-                next_steps=["sent"]
-            )
+            if result.get("success"):
+                return ExecutionResult(
+                    success=True,
+                    output_data={
+                        "email_sent": True,
+                        "recipient": to_email,
+                        "subject": processed_subject,
+                        "sent_at": datetime.now().isoformat(),
+                        "email_type": email_type
+                    },
+                    execution_time_ms=execution_time,
+                    logs=[f"✅ Email sent successfully to {to_email}"],
+                    next_steps=["sent"]
+                )
+            else:
+                return ExecutionResult(
+                    success=False,
+                    output_data={},
+                    error=f"Failed to send email: {result.get('error', 'Unknown error')}",
+                    execution_time_ms=execution_time,
+                    logs=[f"❌ Email sending failed: {result.get('error', 'Unknown error')}"],
+                    next_steps=["error"]
+                )
+                
         except Exception as e:
             return ExecutionResult(
                 success=False,
                 output_data={},
                 error=str(e),
                 execution_time_ms=int((time.time() - start_time) * 1000),
-                logs=[f"Email sending error: {str(e)}"],
+                logs=[f"❌ Email component error: {str(e)}"],
                 next_steps=["error"]
             )
+    
+    def _process_email_template(self, template: str, context: ExecutionContext) -> str:
+        """Process email template with dynamic data"""
+        try:
+            processed = template
+            
+            # Replace {input} with previous outputs
+            if "{input}" in processed:
+                input_str = json.dumps(context.previous_outputs, indent=2, default=str)
+                processed = processed.replace("{input}", input_str)
+            
+            # Replace {result} with formatted result
+            if "{result}" in processed:
+                result_str = self._format_result_data(context.previous_outputs)
+                processed = processed.replace("{result}", result_str)
+            
+            # Replace workflow context variables
+            if hasattr(context, 'workflow_name') and context.workflow_name:
+                processed = processed.replace("{workflow_name}", context.workflow_name)
+            
+            if hasattr(context, 'instance_id') and context.instance_id:
+                processed = processed.replace("{instance_id}", context.instance_id)
+            
+            # Replace timestamp variables
+            now = datetime.now()
+            processed = processed.replace("{timestamp}", now.strftime("%Y-%m-%d %H:%M:%S"))
+            processed = processed.replace("{date}", now.strftime("%Y-%m-%d"))
+            processed = processed.replace("{time}", now.strftime("%H:%M:%S"))
+            
+            return processed
+            
+        except Exception as e:
+            print(f"Template processing error: {e}")
+            return template
+    
+    def _format_result_data(self, data: dict) -> str:
+        """Format result data for email display"""
+        if not data:
+            return "No data available"
+        
+        try:
+            formatted_lines = []
+            for key, value in data.items():
+                if isinstance(value, (dict, list)):
+                    formatted_lines.append(f"{key}: {json.dumps(value, indent=2, default=str)}")
+                else:
+                    formatted_lines.append(f"{key}: {value}")
+            
+            return "\n".join(formatted_lines)
+        except:
+            return str(data)
+    
+    def _prepare_email_attachments(self, context: ExecutionContext) -> list:
+        """Prepare email attachments from workflow data"""
+        attachments = []
+        
+        try:
+            # Create JSON attachment with workflow data
+            data_json = json.dumps({
+                "workflow_data": context.previous_outputs,
+                "execution_context": {
+                    "workflow_name": getattr(context, 'workflow_name', 'Unknown'),
+                    "instance_id": getattr(context, 'instance_id', 'Unknown'),
+                    "execution_time": datetime.now().isoformat()
+                }
+            }, indent=2, default=str)
+            
+            filename = f"workflow_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            
+            attachments.append({
+                "filename": filename,
+                "content": data_json.encode(),
+                "content_type": "application/json"
+            })
+            
+        except Exception as e:
+            print(f"Attachment preparation error: {e}")
+        
+        return attachments
 
 
 class DatabaseWriteComponent(BaseWorkflowComponent):
@@ -2523,6 +2669,206 @@ class GoogleDriveWriteComponent(BaseWorkflowComponent):
         
         print(f"🔍 Drive: _convert_processed_results_to_sheets_for_drive returning {len(sheets_data)} rows (including header)")
         return sheets_data
+
+
+class EmailReportComponent(BaseWorkflowComponent):
+    """Component for sending comprehensive workflow reports via email"""
+    
+    @classmethod
+    def get_metadata(cls) -> WorkflowComponentMetadata:
+        return WorkflowComponentMetadata(
+            type="email_report",
+            name="Email Report Sender",
+            description="Send comprehensive workflow execution reports via email",
+            category="output_actions",
+            icon="DocumentChartBarIcon",
+            color="from-indigo-500 via-purple-600 to-pink-600",
+            parameters=[
+                ComponentParameter(
+                    name="recipient_email",
+                    label="Recipient Email",
+                    type=ParameterType.STRING,
+                    required=True,
+                    description="Email address to send the report to"
+                ),
+                ComponentParameter(
+                    name="report_type",
+                    label="Report Type",
+                    type=ParameterType.SELECT,
+                    required=False,
+                    default_value="execution",
+                    description="Type of report to send",
+                    options=[
+                        {"value": "execution", "label": "Execution Report"},
+                        {"value": "daily_analytics", "label": "Daily Analytics Report"}
+                    ]
+                ),
+                ComponentParameter(
+                    name="include_charts",
+                    label="Include Charts",
+                    type=ParameterType.BOOLEAN,
+                    required=False,
+                    default_value=True,
+                    description="Include analytics charts in the report"
+                ),
+                ComponentParameter(
+                    name="subject_prefix",
+                    label="Subject Prefix",
+                    type=ParameterType.STRING,
+                    required=False,
+                    default_value="Workflow Report",
+                    description="Custom prefix for email subject"
+                )
+            ],
+            input_handles=[
+                ComponentHandle(id="input", type="target", position="left", label="Input")
+            ],
+            output_handles=[
+                ComponentHandle(id="sent", type="source", position="right", label="Report Sent"),
+                ComponentHandle(id="error", type="source", position="bottom", label="Error")
+            ],
+            is_trigger=False,
+            is_async=True,
+            max_runtime_seconds=60
+        )
+    
+    async def execute(self, context: ExecutionContext) -> ExecutionResult:
+        """Execute email report sending"""
+        start_time = time.time()
+        
+        try:
+            # Get configuration
+            recipient_email = context.input_data.get("recipient_email")
+            report_type = context.input_data.get("report_type", "execution")
+            include_charts = context.input_data.get("include_charts", True)
+            subject_prefix = context.input_data.get("subject_prefix", "Workflow Report")
+            
+            # Validate required fields
+            if not recipient_email:
+                return ExecutionResult(
+                    success=False,
+                    output_data={},
+                    error="Recipient email is required",
+                    execution_time_ms=int((time.time() - start_time) * 1000),
+                    logs=["Error: Recipient email is required"],
+                    next_steps=["error"]
+                )
+            
+            # Import email report service
+            from .email_report_service import EmailReportService
+            from .notifications import EmailService
+            from ...core.config import settings
+            
+            # Initialize email service
+            email_base_service = EmailService(
+                smtp_server=settings.SMTP_SERVER,
+                smtp_port=settings.SMTP_PORT,
+                username=settings.SMTP_USERNAME,
+                password=settings.SMTP_PASSWORD,
+                use_tls=settings.SMTP_USE_TLS
+            )
+            email_service = EmailReportService(email_base_service)
+            
+            # Send report based on type
+            if report_type == "execution":
+                # Create execution summary from context
+                from .email_report_service import create_execution_summary_from_data
+                
+                execution_data = {
+                    'start_time': datetime.now().isoformat(),
+                    'end_time': datetime.now().isoformat(),
+                    'status': 'completed',
+                    'total_steps': 1,
+                    'completed_steps': 1,
+                    'failed_steps': 0
+                }
+                
+                execution_summary = create_execution_summary_from_data(
+                    workflow_name=f"Workflow-{context.workflow_id[:8]}",  # Use workflow_id truncated
+                    instance_id=context.instance_id,  # This exists in ExecutionContext
+                    execution_data=execution_data,
+                    logs=[],
+                    events=[]
+                )
+                
+                result = await email_service.send_workflow_completion_report(
+                    recipient_email=recipient_email,
+                    execution_summary=execution_summary,
+                    execution_logs=[],
+                    execution_events=[]
+                )
+                
+            elif report_type == "daily_analytics":
+                # Send daily analytics report
+                from datetime import timezone
+                from .email_report_service import WorkflowAnalytics
+                
+                # Create sample analytics for demonstration
+                analytics = WorkflowAnalytics(
+                    total_executions=1,
+                    successful_executions=1,
+                    failed_executions=0,
+                    average_execution_time=30.0,
+                    success_rate_percentage=100.0,
+                    error_breakdown={},
+                    performance_trend=[]
+                )
+                
+                now = datetime.now(timezone.utc)
+                date_range = (
+                    now.replace(hour=0, minute=0, second=0, microsecond=0),
+                    now.replace(hour=23, minute=59, second=59, microsecond=999999)
+                )
+                
+                result = await email_service.send_daily_analytics_report(
+                    recipient_email=recipient_email,
+                    analytics=analytics,
+                    date_range=date_range,
+                    recent_executions=[execution_summary] if 'execution_summary' in locals() else []
+                )
+            
+            else:
+                return ExecutionResult(
+                    success=False,
+                    output_data={},
+                    error=f"Unsupported report type: {report_type}",
+                    execution_time_ms=int((time.time() - start_time) * 1000),
+                    logs=[f"Error: Unsupported report type: {report_type}"],
+                    next_steps=["error"]
+                )
+            
+            if result.get('success'):
+                return ExecutionResult(
+                    success=True,
+                    output_data={
+                        "email_sent": True,
+                        "recipient": recipient_email,
+                        "report_type": report_type,
+                        "message": f"Report sent successfully to {recipient_email}"
+                    },
+                    execution_time_ms=int((time.time() - start_time) * 1000),
+                    logs=[f"Email report sent to {recipient_email}"],
+                    next_steps=["sent"]
+                )
+            else:
+                return ExecutionResult(
+                    success=False,
+                    output_data={},
+                    error=result.get('error', 'Failed to send email report'),
+                    execution_time_ms=int((time.time() - start_time) * 1000),
+                    logs=[f"Error sending email report: {result.get('error')}"],
+                    next_steps=["error"]
+                )
+                
+        except Exception as e:
+            return ExecutionResult(
+                success=False,
+                output_data={},
+                error=str(e),
+                execution_time_ms=int((time.time() - start_time) * 1000),
+                logs=[f"Error in email report component: {str(e)}"],
+                next_steps=["error"]
+            )
 
 
 # Global component registry instance

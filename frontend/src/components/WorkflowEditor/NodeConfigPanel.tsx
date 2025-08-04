@@ -199,6 +199,153 @@ export default function NodeConfigPanel({ node, onUpdateNode, onDeleteNode }: No
           </div>
         );
 
+      case 'email':
+        return (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                To Email <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="email"
+                value={formData.to_email || ''}
+                onChange={(e) => handleInputChange('to_email', e.target.value)}
+                placeholder="Recipient email address"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+              <p className="text-xs text-gray-500 mt-1">Recipient email address</p>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Subject <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={formData.subject || ''}
+                onChange={(e) => handleInputChange('subject', e.target.value)}
+                placeholder="Email subject line"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+              <p className="text-xs text-gray-500 mt-1">Email subject line</p>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Email Body <span className="text-red-500">*</span>
+              </label>
+              <textarea
+                value={formData.body || ''}
+                onChange={(e) => handleInputChange('body', e.target.value)}
+                placeholder="Email content. Use {input} to reference workflow data."
+                rows={6}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Email body content. You can use variables like {`{input}`}, {`{result}`}, {`{workflow_name}`} to insert dynamic data.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Email Type
+              </label>
+              <select
+                value={formData.email_type || 'html'}
+                onChange={(e) => handleInputChange('email_type', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="html">HTML Email</option>
+                <option value="plain">Plain Text</option>
+              </select>
+              <p className="text-xs text-gray-500 mt-1">Choose email format type</p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Include Attachments
+              </label>
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={formData.include_attachments || false}
+                  onChange={(e) => handleInputChange('include_attachments', e.target.checked)}
+                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                />
+                <label className="ml-2 text-sm text-gray-700">
+                  Include workflow results as attachment
+                </label>
+              </div>
+            </div>
+          </div>
+        );
+
+      case 'email_report':
+        return (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Recipient Email <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="email"
+                value={formData.recipient_email || ''}
+                onChange={(e) => handleInputChange('recipient_email', e.target.value)}
+                placeholder="Email address to send the report to"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+              <p className="text-xs text-gray-500 mt-1">Email address to send the report to</p>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Report Type
+              </label>
+              <select
+                value={formData.report_type || 'execution'}
+                onChange={(e) => handleInputChange('report_type', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="execution">Execution Report</option>
+                <option value="daily_analytics">Daily Analytics Report</option>
+              </select>
+              <p className="text-xs text-gray-500 mt-1">Type of report to send</p>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Include Charts
+              </label>
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={formData.include_charts !== false}
+                  onChange={(e) => handleInputChange('include_charts', e.target.checked)}
+                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                />
+                <label className="ml-2 text-sm text-gray-700">
+                  Include analytics charts in the report
+                </label>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">Charts will be generated and attached to the email</p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Subject Prefix
+              </label>
+              <input
+                type="text"
+                value={formData.subject_prefix || 'Workflow Report'}
+                onChange={(e) => handleInputChange('subject_prefix', e.target.value)}
+                placeholder="e.g., Daily Report, Analytics Summary"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+              <p className="text-xs text-gray-500 mt-1">Custom prefix for email subject line</p>
+            </div>
+          </div>
+        );
+
       case 'condition':
         return (
           <div className="space-y-4">

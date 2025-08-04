@@ -15,6 +15,7 @@ import {
   ArrowsRightLeftIcon,
   MagnifyingGlassIcon,
   EnvelopeIcon,
+  DocumentChartBarIcon,
   CogIcon,
   XMarkIcon,
   ChevronDownIcon,
@@ -33,6 +34,7 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   ArrowsRightLeftIcon: ArrowsRightLeftIcon,
   MagnifyingGlassIcon: MagnifyingGlassIcon,
   EnvelopeIcon: EnvelopeIcon,
+  DocumentChartBarIcon: DocumentChartBarIcon,
   CogIcon: CogIcon,
 };
 
@@ -49,7 +51,14 @@ export default function DynamicWorkflowSidebar({
   const { components, loading, error } = useWorkflowComponents();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategories, setSelectedCategories] = useState<string[]>(['triggers', 'data_sources', 'ai_processing', 'control_flow', 'output_actions']);
-  const [expandedCategories, setExpandedCategories] = useState<string[]>(['triggers', 'data_sources', 'ai_processing']);
+  const [expandedCategories, setExpandedCategories] = useState<string[]>(['triggers', 'data_sources', 'ai_processing', 'output_actions']); // Add output_actions
+
+  // Debug log để kiểm tra components
+  console.log('=== COMPONENT DEBUG ===');
+  console.log('Total components:', components.length);
+  console.log('Components:', components);
+  console.log('Email sender component:', components.find(c => c.type === 'email_sender'));
+  console.log('======================');
 
   // Lọc components theo search và category
   const filteredComponents = components.filter(component => {
@@ -67,6 +76,15 @@ export default function DynamicWorkflowSidebar({
     acc[component.category].push(component);
     return acc;
   }, {} as Record<string, typeof components>);
+
+  // Debug filtered và grouped components
+  console.log('=== FILTER DEBUG ===');
+  console.log('Selected categories:', selectedCategories);
+  console.log('Filtered components:', filteredComponents.length);
+  console.log('Email sender in filtered:', filteredComponents.find(c => c.type === 'email_sender'));
+  console.log('Grouped components:', groupedComponents);
+  console.log('Output actions group:', groupedComponents.output_actions);
+  console.log('===================');
 
   // Category labels mapping
   const categoryLabels: Record<string, string> = {
