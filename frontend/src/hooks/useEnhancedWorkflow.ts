@@ -140,6 +140,7 @@ export const useWorkflowExecution = (instanceId?: string) => {
   const [error, setError] = useState<string | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
+  const logRefreshTimeoutRef = useRef<number | null>(null);
 
   // Connect to WebSocket for real-time updates
   const connectToUpdates = useCallback((targetInstanceId: string) => {
@@ -178,6 +179,22 @@ export const useWorkflowExecution = (instanceId?: string) => {
           } else if (executionEvent.event_type === 'execution_stopped') {
             setExecutionStatus(prev => prev ? { ...prev, status: 'cancelled', is_running: false } : null);
           }
+
+          // Auto-refresh logs for important events
+          if (executionEvent.event_type === 'component_executed' || 
+              executionEvent.event_type === 'component_failed' ||
+              executionEvent.event_type === 'execution_completed' ||
+              executionEvent.event_type === 'execution_failed') {
+            // Debounce log fetching to avoid too many API calls
+            if (logRefreshTimeoutRef.current) {
+              clearTimeout(logRefreshTimeoutRef.current);
+            }
+            logRefreshTimeoutRef.current = setTimeout(() => {
+              if (instanceId) {
+                fetchExecutionLogs(instanceId);
+              }
+            }, 500); // Wait 500ms before fetching logs
+          }
           
         } catch (err) {
           console.error('Error parsing WebSocket message:', err);
@@ -208,6 +225,11 @@ export const useWorkflowExecution = (instanceId?: string) => {
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
+    }
+    // Clean up timeout
+    if (logRefreshTimeoutRef.current) {
+      clearTimeout(logRefreshTimeoutRef.current);
+      logRefreshTimeoutRef.current = null;
     }
     setIsConnected(false);
   }, []);
@@ -298,6 +320,11 @@ export const useWorkflowExecution = (instanceId?: string) => {
 
     return () => {
       disconnect();
+      // Clean up timeout
+      if (logRefreshTimeoutRef.current) {
+        clearTimeout(logRefreshTimeoutRef.current);
+        logRefreshTimeoutRef.current = null;
+      }
     };
   }, [instanceId, connectToUpdates, fetchExecutionStatus, fetchExecutionLogs, disconnect]);
 

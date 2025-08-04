@@ -1,7 +1,7 @@
 /**
  * Execution Panel for Real-time Workflow Monitoring
  */
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { ExecutionStatus, ExecutionLog, ExecutionEvent } from '../../services/enhancedWorkflowEditorApi';
 
@@ -9,7 +9,8 @@ interface ExecutionPanelProps {
   executionStatus: ExecutionStatus | null;
   executionLogs: ExecutionLog[];
   executionEvents: ExecutionEvent[];
-  onClose: () => void;
+  instanceId?: string;
+  onClose?: () => void;
 }
 
 // Enhanced interfaces for better data organization
@@ -39,14 +40,64 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = ({
   executionStatus,
   executionLogs = [],
   executionEvents = [],
+  instanceId,
   onClose
 }) => {
   const { isDark } = useTheme() || { isDark: false };
   const [activeTab, setActiveTab] = useState<'events' | 'logs'>('events');
 
+  // Storage functionality
+  const STORAGE_KEY_PREFIX = 'workflow_execution_';
+  const getStorageKey = (id: string, type: string) => `${STORAGE_KEY_PREFIX}${id}_${type}`;
+
+  // Auto-save execution data when it changes
+  useEffect(() => {
+    if (instanceId && (executionStatus || executionLogs.length > 0 || executionEvents.length > 0)) {
+      try {
+        if (executionStatus) {
+          localStorage.setItem(getStorageKey(instanceId, 'status'), JSON.stringify(executionStatus));
+        }
+        if (executionLogs.length > 0) {
+          localStorage.setItem(getStorageKey(instanceId, 'logs'), JSON.stringify(executionLogs));
+        }
+        if (executionEvents.length > 0) {
+          localStorage.setItem(getStorageKey(instanceId, 'events'), JSON.stringify(executionEvents));
+        }
+        localStorage.setItem(getStorageKey(instanceId, 'updated'), new Date().toISOString());
+        console.log('💾 Auto-saved execution data for:', instanceId);
+      } catch (error) {
+        console.warn('Failed to save execution data:', error);
+      }
+    }
+  }, [instanceId, executionStatus, executionLogs, executionEvents]);
+
+  // Load saved data if current data is empty
+  const loadSavedData = (id: string) => {
+    try {
+      const savedStatus = localStorage.getItem(getStorageKey(id, 'status'));
+      const savedLogs = localStorage.getItem(getStorageKey(id, 'logs'));
+      const savedEvents = localStorage.getItem(getStorageKey(id, 'events'));
+      
+      return {
+        status: savedStatus ? JSON.parse(savedStatus) : null,
+        logs: savedLogs ? JSON.parse(savedLogs) : [],
+        events: savedEvents ? JSON.parse(savedEvents) : []
+      };
+    } catch (error) {
+      console.warn('Failed to load saved data:', error);
+      return { status: null, logs: [], events: [] };
+    }
+  };
+
+  // Get effective data (current or saved)
+  const savedData = instanceId ? loadSavedData(instanceId) : { status: null, logs: [], events: [] };
+  const effectiveStatus = executionStatus || savedData.status;
+  const effectiveLogs = executionLogs.length > 0 ? executionLogs : savedData.logs;
+  const effectiveEvents = executionEvents.length > 0 ? executionEvents : savedData.events;
+
   // Safe guard against undefined arrays
-  const safeExecutionLogs = executionLogs || [];
-  const safeExecutionEvents = executionEvents || [];
+  const safeExecutionLogs = effectiveLogs || [];
+  const safeExecutionEvents = effectiveEvents || [];
 
   // Process events - Transform raw execution events into concise summary events
   const processedEvents = useMemo((): ProcessedEvent[] => {
@@ -227,55 +278,55 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = ({
     });
 
     // Add workflow status logs based on execution status
-    if (executionStatus) {
-      if (executionStatus.status === 'completed') {
+    if (effectiveStatus) {
+      if (effectiveStatus.status === 'completed') {
         logs.unshift({
           id: 'workflow-completed',
           level: 'success',
           title: 'Workflow Completed Successfully',
           message: 'All workflow steps have been executed successfully',
-          timestamp: executionStatus.completed_at || new Date().toISOString(),
+          timestamp: effectiveStatus.completed_at || new Date().toISOString(),
           details: {
-            instance_id: executionStatus.instance_id,
-            started_at: executionStatus.started_at,
-            completed_at: executionStatus.completed_at,
-            total_execution_time: executionStatus.started_at && executionStatus.completed_at 
-              ? Math.round((new Date(executionStatus.completed_at).getTime() - new Date(executionStatus.started_at).getTime()) / 1000)
+            instance_id: effectiveStatus.instance_id,
+            started_at: effectiveStatus.started_at,
+            completed_at: effectiveStatus.completed_at,
+            total_execution_time: effectiveStatus.started_at && effectiveStatus.completed_at 
+              ? Math.round((new Date(effectiveStatus.completed_at).getTime() - new Date(effectiveStatus.started_at).getTime()) / 1000)
               : undefined
           }
         });
-      } else if (executionStatus.status === 'failed') {
+      } else if (effectiveStatus.status === 'failed') {
         logs.unshift({
           id: 'workflow-failed',
           level: 'error',
           title: 'Workflow Execution Failed',
-          message: executionStatus.error_message || 'Workflow execution encountered an error',
-          timestamp: executionStatus.completed_at || new Date().toISOString(),
+          message: effectiveStatus.error_message || 'Workflow execution encountered an error',
+          timestamp: effectiveStatus.completed_at || new Date().toISOString(),
           details: {
-            instance_id: executionStatus.instance_id,
-            error_message: executionStatus.error_message,
-            started_at: executionStatus.started_at,
-            failed_at: executionStatus.completed_at
+            instance_id: effectiveStatus.instance_id,
+            error_message: effectiveStatus.error_message,
+            started_at: effectiveStatus.started_at,
+            failed_at: effectiveStatus.completed_at
           }
         });
-      } else if (executionStatus.status === 'running') {
+      } else if (effectiveStatus.status === 'running') {
         logs.unshift({
           id: 'workflow-running',
           level: 'info',
           title: 'Workflow In Progress',
           message: 'Workflow is currently executing...',
-          timestamp: executionStatus.started_at || new Date().toISOString(),
+          timestamp: effectiveStatus.started_at || new Date().toISOString(),
           details: {
-            instance_id: executionStatus.instance_id,
-            started_at: executionStatus.started_at,
-            is_running: executionStatus.is_running
+            instance_id: effectiveStatus.instance_id,
+            started_at: effectiveStatus.started_at,
+            is_running: effectiveStatus.is_running
           }
         });
       }
     }
 
     return logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-  }, [safeExecutionLogs, safeExecutionEvents, executionStatus]);
+  }, [safeExecutionLogs, safeExecutionEvents, effectiveStatus]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -403,6 +454,45 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = ({
     }
     
     return <span className="break-words text-gray-700">{String(value)}</span>;
+  };
+
+  // Export function for current execution data
+  const exportCurrentData = () => {
+    if (!instanceId) {
+      alert('❌ No instance ID available for export');
+      return;
+    }
+
+    const dataToExport = {
+      instanceId,
+      exportedAt: new Date().toISOString(),
+      executionStatus: effectiveStatus,
+      executionLogs: effectiveLogs,
+      executionEvents: effectiveEvents,
+      processedEvents,
+      processedLogs,
+      metadata: {
+        totalEvents: processedEvents.length,
+        totalLogs: processedLogs.length,
+        hasRealTimeData: executionLogs.length > 0 || executionEvents.length > 0,
+        dataSource: executionLogs.length > 0 ? 'realtime' : 'localStorage'
+      }
+    };
+
+    const dataStr = JSON.stringify(dataToExport, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
+
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `workflow_execution_${instanceId.substring(0, 8)}_${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    console.log('📥 Exported execution data:', dataToExport);
+    alert('✅ Execution data exported successfully!');
   };
 
   const renderEventContent = (event: ProcessedEvent) => {
@@ -691,10 +781,39 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = ({
         isDark ? 'border-gray-700 text-gray-400' : 'border-gray-200 text-gray-500'
       }`}>
         <div className="flex items-center justify-between">
-          <span>Real-time updates</span>
-          <div className="flex items-center gap-1">
-            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-            <span>Connected</span>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1">
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+              <span>Real-time updates</span>
+            </div>
+            {savedData && savedData.status && (
+              <span className="text-xs">
+                💾 Data auto-saved
+              </span>
+            )}
+          </div>
+          
+          <div className="flex items-center gap-2">
+            {/* Export Button */}
+            <button
+              onClick={exportCurrentData}
+              disabled={!instanceId}
+              className={`px-2 py-1 rounded text-xs border transition-colors ${
+                !instanceId 
+                  ? 'opacity-50 cursor-not-allowed bg-gray-100 border-gray-300' 
+                  : isDark 
+                    ? 'bg-gray-600 border-gray-500 text-gray-300 hover:bg-gray-500' 
+                    : 'bg-gray-100 border-gray-300 text-gray-600 hover:bg-gray-200'
+              }`}
+              title={instanceId ? 'Export execution data to JSON file' : 'No instance ID available'}
+            >
+              📥 Export
+            </button>
+            
+            {/* Info */}
+            <div className="flex items-center gap-1">
+              <span>Connected</span>
+            </div>
           </div>
         </div>
       </div>

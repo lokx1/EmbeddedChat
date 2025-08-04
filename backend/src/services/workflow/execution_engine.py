@@ -208,6 +208,16 @@ class WorkflowExecutionEngine:
             {"node_id": node_id, "node_type": node_type, "node_data": node_data}
         ))
         
+        # DEBUG: Log node config for GoogleSheetsWrite
+        if node_type == "google_sheets_write":
+            with open("d:/EmbeddedChat/frontend_execution_debug.log", "a", encoding="utf-8") as f:
+                f.write(f"\n=== GOOGLE SHEETS WRITE NODE EXECUTION ===\n")
+                f.write(f"Node ID: {node_id}\n")
+                f.write(f"Node Type: {node_type}\n")
+                f.write(f"Node Data: {json.dumps(node_data, indent=2, ensure_ascii=False)}\n")
+                f.write(f"Config from node_data: {json.dumps(node_data.get('config', {}), indent=2, ensure_ascii=False)}\n")
+                f.write(f"==========================================\n")
+        
         try:
             # Get component for this node type
             component_class = component_registry.get_component(node_type)
@@ -215,6 +225,15 @@ class WorkflowExecutionEngine:
             
             # Prepare execution context
             input_data = {**workflow_input, **node_data.get("config", {})}
+            
+            # DEBUG: Log execution context for GoogleSheetsWrite
+            if node_type == "google_sheets_write":
+                with open("d:/EmbeddedChat/frontend_execution_debug.log", "a", encoding="utf-8") as f:
+                    f.write(f"\n=== EXECUTION CONTEXT ===\n")
+                    f.write(f"Input Data: {json.dumps(input_data, indent=2, ensure_ascii=False)}\n")
+                    f.write(f"Previous Outputs: {json.dumps(node_outputs, indent=2, ensure_ascii=False)}\n")
+                    f.write(f"Global Variables: {json.dumps(global_variables, indent=2, ensure_ascii=False)}\n")
+                    f.write(f"========================\n")
             
             context = ExecutionContext(
                 workflow_id=instance_id,
@@ -249,6 +268,10 @@ class WorkflowExecutionEngine:
             # Store node output
             node_outputs[node_id] = result.output_data
             executed_nodes.add(node_id)
+            
+            print(f"🔧 Node {node_id} executed successfully!")
+            print(f"🔧 Output keys: {list(result.output_data.keys()) if isinstance(result.output_data, dict) else type(result.output_data)}")
+            print(f"🔧 Current node_outputs keys: {list(node_outputs.keys())}")
             
             # Emit step completed event
             self._emit_event(instance_id, ExecutionEvent(

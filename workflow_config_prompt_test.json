@@ -1,0 +1,44 @@
+{
+  "workflow_id": "test_prompt_column_workflow",
+  "name": "Test Auto-Add Prompt Column",
+  "description": "Test workflow to verify auto-add Prompt column feature",
+  "components": [
+    {
+      "id": "read_sheets",
+      "type": "google_sheets_read",
+      "config": {
+        "sheet_id": "1Wly5cBDxYoPJE3gJtvyPXUpRBzEzuzYOpZPl_Sj4hIc",
+        "worksheet_name": "TEST_NEW",
+        "range": "A:Z"
+      }
+    },
+    {
+      "id": "ai_process",
+      "type": "ai_processing",
+      "config": {
+        "provider": "openai",
+        "model": "gpt-3.5-turbo",
+        "task_type": "text_generation"
+      }
+    },
+    {
+      "id": "write_sheets",
+      "type": "google_sheets_write",
+      "config": {
+        "sheet_id": "1Wly5cBDxYoPJE3gJtvyPXUpRBzEzuzYOpZPl_Sj4hIc",
+        "worksheet_name": "TEST_NEW",
+        "operation": "overwrite"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": "read_sheets",
+      "to": "ai_process"
+    },
+    {
+      "from": "ai_process",
+      "to": "write_sheets"
+    }
+  ]
+}

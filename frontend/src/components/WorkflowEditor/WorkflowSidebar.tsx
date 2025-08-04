@@ -18,6 +18,7 @@ import {
   ArrowPathIcon,
   CloudIcon,
   BellIcon,
+  CloudArrowUpIcon,
   ChartBarIcon,
   FlagIcon
 } from '@heroicons/react/24/outline';
@@ -65,12 +66,28 @@ const workflowComponents: ComponentItem[] = [
 
   // Data sources
   {
-    type: 'sheets',
+    type: 'google_sheets',
     label: 'Google Sheets',
     description: 'Read data from Google Sheets',
     IconComponent: TableCellsIcon,
     category: 'Data Sources',
     color: 'from-green-500 via-emerald-600 to-green-700'
+  },
+  {
+    type: 'google_sheets_write',
+    label: 'Google Sheets Write',
+    description: 'Write data to Google Sheets',
+    IconComponent: TableCellsIcon,
+    category: 'Output & Actions',
+    color: 'from-blue-500 via-blue-600 to-indigo-700'
+  },
+  {
+    type: 'google_drive_write',
+    label: 'Google Drive Write',
+    description: 'Save files to Google Drive',
+    IconComponent: CloudArrowUpIcon,
+    category: 'Output & Actions',
+    color: 'from-purple-500 via-purple-600 to-purple-700'
   },
   {
     type: 'database',

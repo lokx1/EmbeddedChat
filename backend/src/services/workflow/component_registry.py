@@ -431,7 +431,13 @@ class GoogleSheetsComponent(BaseWorkflowComponent):
             
             # Use real Google Sheets API
             if GOOGLE_SHEETS_AVAILABLE:
-                sheets_service = GoogleSheetsService()
+                # Get Google Sheets service with CORRECT credentials path
+                import os
+                # Use absolute path to credentials.json in backend folder  
+                credentials_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "credentials.json")
+                credentials_path = os.path.normpath(credentials_path)
+                
+                sheets_service = GoogleSheetsService(credentials_path)
                 
                 if not await sheets_service.authenticate():
                     raise Exception("Failed to authenticate with Google Sheets API")
@@ -627,8 +633,8 @@ class AIProcessingComponent(BaseWorkflowComponent):
                     name="max_tokens",
                     label="Max Tokens",
                     type=ParameterType.NUMBER,
-                    default_value=1000,
-                    description="Maximum number of tokens to generate"
+                    default_value=4000,  # ⬆️ Increased from 1000 to 4000
+                    description="Maximum number of tokens to generate (up to 4000 for better responses)"
                 )
             ],
             input_handles=[
@@ -650,7 +656,7 @@ class AIProcessingComponent(BaseWorkflowComponent):
             model = context.input_data.get("model", "gpt-4o")
             prompt_template = context.input_data.get("prompt", "")
             temperature = context.input_data.get("temperature", 0.7)
-            max_tokens = context.input_data.get("max_tokens", 1000)
+            max_tokens = context.input_data.get("max_tokens", 4000)  # ⬆️ Increased default to 4000
             
             # Get input data from previous step (should be Google Sheets data)
             input_data = context.previous_outputs
@@ -662,6 +668,10 @@ class AIProcessingComponent(BaseWorkflowComponent):
                     sheets_data = step_output
                     break
             
+            # If no sheets data from previous steps, try to get from context input_data
+            if not sheets_data and context.input_data.get("sheets_data"):
+                sheets_data = context.input_data["sheets_data"]
+                
             if not sheets_data:
                 return ExecutionResult(
                     success=False,
@@ -734,8 +744,8 @@ class AIProcessingComponent(BaseWorkflowComponent):
                     "model": model
                 },
                 "original_sheets_info": sheets_data.get("spreadsheet_info", {}),
-                # Format for Google Sheets Write component
-                "results_for_sheets": self._format_results_for_sheets(processed_results)
+                # Format for Google Sheets Write component - Use the CORRECT method for AI results
+                "results_for_sheets": self._format_ai_results_for_sheets(processed_results)
             }
             
             return ExecutionResult(
@@ -852,13 +862,48 @@ class AIProcessingComponent(BaseWorkflowComponent):
             
             {prompt}
             
-            Please provide a detailed asset specification including:
-            1. Technical specifications
-            2. Style guidelines
-            3. Color palette suggestions
-            4. Implementation notes
+            Please provide a comprehensive and detailed asset specification including:
             
-            Keep response concise but comprehensive.
+            1. TECHNICAL SPECIFICATIONS:
+               - Exact dimensions and resolution requirements
+               - File format specifications and compression settings
+               - Color depth and transparency requirements
+               - Size limitations and optimization guidelines
+            
+            2. DESIGN & STYLE GUIDELINES:
+               - Visual style direction (modern, minimalist, vintage, etc.)
+               - Layout and composition principles
+               - Typography recommendations (if applicable)
+               - Icon or graphic elements to include
+               - Mood and aesthetic considerations
+            
+            3. COLOR PALETTE & BRANDING:
+               - Primary and secondary color recommendations with hex codes
+               - Color psychology and brand alignment
+               - Contrast and accessibility considerations
+               - Color variations for different use cases
+            
+            4. CONTENT & MESSAGING:
+               - Key messages or text to include
+               - Call-to-action elements
+               - Hierarchy of information
+               - Target audience considerations
+            
+            5. IMPLEMENTATION NOTES:
+               - Best practices for creation
+               - Tools and software recommendations
+               - Quality assurance checkpoints
+               - Delivery format and naming conventions
+            
+            6. USAGE GUIDELINES:
+               - Intended use cases and platforms
+               - Scaling and adaptation requirements
+               - Brand compliance considerations
+               - Performance optimization tips
+            
+            Provide a detailed, actionable response that serves as a complete creative brief.
+            Be specific with measurements, hex codes, and technical requirements.
+            Make your response comprehensive and professional - aim for 2000-3000 characters.
             """
             
             # Ollama API call
@@ -932,10 +977,10 @@ class AIProcessingComponent(BaseWorkflowComponent):
     def _format_results_for_sheets(self, processed_results: list) -> list:
         """Format AI processing results for Google Sheets Write component"""
         
-        # Header row
+        # Header row with Prompt column added
         headers = [
             "Row Index", "Original Description", "Output Format", "Status", 
-            "Generated URL", "Provider", "Model", "Quality", "Size", 
+            "Generated URL", "Prompt", "Provider", "Model", "Quality", "Size", 
             "Processing Time", "Timestamp", "Notes"
         ]
         
@@ -946,12 +991,25 @@ class AIProcessingComponent(BaseWorkflowComponent):
             ai_response = result.get("ai_response", {})
             metadata = ai_response.get("metadata", {}) if ai_response else {}
             
+            # Extract and clean AI response text (remove <think> tags)
+            ai_text = ""
+            if ai_response and "ai_response" in ai_response:
+                ai_text = ai_response["ai_response"]
+            elif ai_response and "generated_text" in ai_response:
+                ai_text = ai_response["generated_text"]
+            elif ai_response and "response" in ai_response:
+                ai_text = ai_response["response"]
+            
+            # Clean the AI response by removing <think> tags and content
+            cleaned_prompt = self._clean_ai_response(ai_text) if ai_text else ""
+            
             row = [
                 result.get("row_index", ""),
                 input_data.get("description", ""),
                 input_data.get("output_format", ""),
                 result.get("status", ""),
                 ai_response.get("generated_url", "") if ai_response else "",
+                cleaned_prompt,  # ⭐ NEW: Cleaned AI response as prompt
                 result.get("provider", ""),
                 result.get("model", ""),
                 metadata.get("quality", ""),
@@ -963,6 +1021,192 @@ class AIProcessingComponent(BaseWorkflowComponent):
             data_rows.append(row)
         
         return [headers] + data_rows
+    
+    def _format_ai_results_for_sheets(self, processed_results: list) -> list:
+        """Format AI processing results specifically for Google Sheets Write
+        
+        This converts the AI processing 'processed_results' format to a clean table format
+        with original input data + AI response in Prompt column
+        """
+        if not processed_results:
+            return []
+            
+        # Extract headers from first result's input_data
+        first_result = processed_results[0]
+        input_data = first_result.get("input_data", {})
+        
+        # Get original headers from input data
+        original_headers = list(input_data.keys())
+        
+        # Check if "Prompt" column already exists, if so replace it, otherwise add it
+        if "Prompt" in original_headers:
+            # Prompt column already exists, we'll replace its content
+            headers = original_headers
+        else:
+            # Add Prompt column for AI response
+            headers = original_headers + ["Prompt"]
+        
+        # Create data rows
+        data_rows = [headers]  # Start with header row
+        
+        for result in processed_results:
+            input_data = result.get("input_data", {})
+            ai_response = result.get("ai_response", {})
+            
+            # Debug: Log AI response structure
+            print(f"🔍 AI Response structure for row {result.get('row_index', '?')}: {type(ai_response)}")
+            if isinstance(ai_response, dict):
+                print(f"🔍 AI Response keys: {list(ai_response.keys())}")
+                for key, value in ai_response.items():
+                    if isinstance(value, str) and len(value) > 50:
+                        print(f"🔍   {key}: {type(value)} - {str(value)[:100]}...")
+                    else:
+                        print(f"🔍   {key}: {type(value)} - {value}")
+            
+            # Extract and clean AI response for Prompt column
+            ai_text = ""
+            if ai_response:
+                # FIXED: Correct extraction logic for different AI provider structures
+                # Check if ai_response is the direct text content (from Ollama)
+                if "ai_response" in ai_response and isinstance(ai_response["ai_response"], str):
+                    ai_text = ai_response["ai_response"]
+                    print(f"🎯 Found ai_response (Ollama): {ai_text[:100]}...")
+                
+                # Fallback to other AI provider keys if ai_response not found
+                elif not ai_text:
+                    print(f"🔍 Trying fallback extraction methods for other providers...")
+                    # Try direct text fields from different providers
+                    for key in ["prompt_used", "note", "response", "content", "text", "generated_text"]:
+                        if key in ai_response and isinstance(ai_response[key], str) and ai_response[key].strip():
+                            ai_text = ai_response[key]
+                            print(f"🎯 Found text in {key}: {ai_text[:100]}...")
+                            break
+                    
+                    # If still no text, look for any substantial string value
+                    if not ai_text:
+                        for key, value in ai_response.items():
+                            if isinstance(value, str) and len(value.strip()) > 20:  # Substantial text content
+                                ai_text = value
+                                print(f"🎯 Found substantial text in {key}: {ai_text[:100]}...")
+                                break
+                
+                # Last resort: create a summary from available data
+                if not ai_text and ai_response:
+                    # Create a meaningful summary from the AI response structure
+                    summary_parts = []
+                    for key, value in ai_response.items():
+                        if isinstance(value, str) and value.strip() and key not in ["type", "provider", "model"]:
+                            summary_parts.append(f"{key}: {value}")
+                    
+                    if summary_parts:
+                        ai_text = " | ".join(summary_parts[:3])  # Take first 3 meaningful parts
+                        print(f"🎯 Created summary text: {ai_text[:100]}...")
+            
+            # If still no text, provide a default message
+            if not ai_text:
+                ai_text = f"AI processing completed for row {result.get('row_index', '?')} - check logs for details"
+                print(f"⚠️ No AI text found, using default message")
+            
+            # Clean the AI response by removing <think> tags and content
+            cleaned_prompt = self._clean_ai_response(ai_text) if ai_text else ""
+            print(f"🎯 Final cleaned_prompt for row {result.get('row_index', '?')}: '{cleaned_prompt[:100]}...' (length: {len(cleaned_prompt)})")
+            
+            # Build row with original data, replacing Prompt column if it exists
+            row = []
+            for header in original_headers:
+                if header == "Prompt":
+                    # Replace the empty/existing Prompt column with AI response
+                    row.append(cleaned_prompt)
+                else:
+                    row.append(str(input_data.get(header, "")))
+            
+            # If Prompt column didn't exist in original headers, add it now
+            if "Prompt" not in original_headers:
+                row.append(cleaned_prompt)
+            
+            data_rows.append(row)
+        
+        return data_rows
+    
+    def _clean_ai_response(self, ai_text: str) -> str:
+        """Clean AI response by removing <think> tags and their content"""
+        if not ai_text:
+            return ""
+        
+        import re
+        
+        # Remove <think>...</think> blocks (including multiline)
+        cleaned = re.sub(r'<think>.*?</think>', '', ai_text, flags=re.DOTALL | re.IGNORECASE)
+        
+        # Remove any remaining <think> or </think> tags
+        cleaned = re.sub(r'</?think>', '', cleaned, flags=re.IGNORECASE)
+        
+        # Clean up extra whitespace and normalize line breaks
+        cleaned = re.sub(r'\n\s*\n+', '\n\n', cleaned)  # Multiple newlines to double newline
+        cleaned = re.sub(r'^\s+|\s+$', '', cleaned, flags=re.MULTILINE)  # Trim each line
+        cleaned = cleaned.strip()
+        
+        # If the text is too long, truncate it but keep it readable
+        if len(cleaned) > 2000:  # Increased limit for better content
+            # Try to cut at a sentence boundary
+            truncated = cleaned[:2000]
+            last_period = truncated.rfind('.')
+            if last_period > 1000:  # Only cut at period if it's not too early
+                cleaned = truncated[:last_period + 1] + " [...]"
+            else:
+                cleaned = truncated + " [...]"
+        
+        return cleaned
+
+    def _convert_processed_results_to_sheets(self, processed_results: List[Dict[str, Any]]) -> List[List[str]]:
+        """Convert processed_results from AI Processing to Google Sheets format"""
+        
+        if not processed_results:
+            return []
+        
+        # Get the first result to determine headers
+        first_result = processed_results[0]
+        input_data_sample = first_result.get("input_data", {})
+        
+        # Get original headers from the input data
+        original_headers = list(input_data_sample.keys())
+        
+        # Add Prompt column if not exists
+        if "Prompt" not in original_headers:
+            original_headers.append("Prompt")
+        
+        print(f"🔧 Headers for sheets: {original_headers}")
+        
+        # Build data rows starting with headers
+        data_rows = [original_headers]
+        
+        for result in processed_results:
+            input_data = result.get("input_data", {})
+            ai_response = result.get("ai_response", {})
+            
+            # Extract AI response text
+            ai_text = ""
+            if isinstance(ai_response, dict) and "ai_response" in ai_response:
+                ai_text = ai_response["ai_response"]
+            elif isinstance(ai_response, str):
+                ai_text = ai_response
+            
+            # Clean the AI response
+            cleaned_prompt = self._clean_ai_response(ai_text) if ai_text else ""
+            print(f"🎯 Row {result.get('row_index', '?')} - Prompt: '{cleaned_prompt[:100]}...'")
+            
+            # Build row with original data, adding Prompt column
+            row = []
+            for header in original_headers:
+                if header == "Prompt":
+                    row.append(cleaned_prompt)
+                else:
+                    row.append(str(input_data.get(header, "")))
+            
+            data_rows.append(row)
+        
+        print(f"🔧 Generated {len(data_rows)} rows (including header)")
+        return data_rows
 
 
 class WebhookComponent(BaseWorkflowComponent):
@@ -1294,6 +1538,10 @@ class GoogleSheetsWriteComponent(BaseWorkflowComponent):
     async def execute(self, context: ExecutionContext) -> ExecutionResult:
         start_time = time.time()
         
+        print(f"🚀 GoogleSheetsWriteComponent.execute() CALLED!")
+        print(f"🔧 Context input_data keys: {list(context.input_data.keys())}")
+        print(f"🔧 Context previous_outputs keys: {list(context.previous_outputs.keys())}")
+        
         try:
             # Get configuration from input_data (which includes merged node config)
             sheet_id = context.input_data.get("sheet_id")
@@ -1301,6 +1549,8 @@ class GoogleSheetsWriteComponent(BaseWorkflowComponent):
             range_start = context.input_data.get("range", "A1")
             mode = context.input_data.get("mode", "append")
             data_format = context.input_data.get("data_format", "auto")
+            
+            print(f"🔧 Extracted config: sheet_id={sheet_id}, mode={mode}, data_format={data_format}")
             
             if not sheet_id:
                 raise ValueError("sheet_id is required")
@@ -1315,29 +1565,58 @@ class GoogleSheetsWriteComponent(BaseWorkflowComponent):
             
             # Log all previous outputs in detail
             for node_id, node_output in context.previous_outputs.items():
+                debug_logs.append(f"Previous output from {node_id}: {type(node_output)}")
+                if isinstance(node_output, dict):
+                    debug_logs.append(f"  Keys in {node_id}: {list(node_output.keys())}")
+                    # Check for results_for_sheets specifically
+                    if 'results_for_sheets' in node_output:
+                        sheets_data = node_output['results_for_sheets']
+                        debug_logs.append(f"  🎯 Found results_for_sheets in {node_id}: {len(sheets_data) if isinstance(sheets_data, list) else 'Not a list'}")
+                        if isinstance(sheets_data, list) and len(sheets_data) > 0:
+                            debug_logs.append(f"  📊 First row: {sheets_data[0] if len(sheets_data) > 0 else 'Empty'}")
+                            debug_logs.append(f"  📊 Headers: {sheets_data[0] if len(sheets_data) > 0 and isinstance(sheets_data[0], list) else 'Not list format'}")
+                
                 debug_logs.append(f"Previous output from {node_id}: {node_output}")
             
             # Get input data from previous nodes or workflow input
             input_data = None
             
+            print(f"🔍 Searching for data in previous_outputs...")
+            
             # First try to get data from previous node outputs
             for node_id, node_output in context.previous_outputs.items():
                 debug_logs.append(f"Checking node {node_id}: {type(node_output)}")
+                print(f"🔍 Checking node {node_id}: {type(node_output)}")
                 if isinstance(node_output, dict):
-                    # Try different possible data keys
-                    data_keys = ["data", "results_for_sheets", "processed_results", "records", "values"]
-                    for key in data_keys:
-                        if key in node_output and node_output[key]:
-                            input_data = node_output[key]
-                            debug_logs.append(f"Found data in node {node_id}.{key}: {type(input_data)} with length {len(input_data) if isinstance(input_data, (list, dict)) else 'N/A'}")
-                            break
-                    if input_data:
+                    print(f"🔍 Node {node_id} keys: {list(node_output.keys())}")
+                    
+                    # SIMPLIFIED: Use processed_results directly from AI Processing
+                    if "processed_results" in node_output and node_output["processed_results"]:
+                        processed_results = node_output["processed_results"]
+                        print(f"🎯 FOUND processed_results in {node_id}: {len(processed_results)} rows")
+                        
+                        # Convert processed_results to sheets format here (inline)
+                        input_data = self._convert_processed_results_to_sheets(processed_results)
+                        print(f"🎯 Converted to sheets format: {len(input_data)} rows")
                         break
+                    
+                    # Backup: Check for 'results_for_sheets' 
+                    elif "results_for_sheets" in node_output and node_output["results_for_sheets"]:
+                        input_data = node_output["results_for_sheets"]
+                        debug_logs.append(f"🎯 Found results_for_sheets in {node_id}: {len(input_data)} rows")
+                        print(f"🎯 FOUND results_for_sheets in {node_id}: {len(input_data)} rows")
+                        print(f"🔍 First row sample: {input_data[0] if input_data else 'Empty'}")
+                        break
+                
+                print(f"🔍 No suitable data found in {node_id}, continuing...")
+            
+            print(f"🔍 Final input_data: {type(input_data)} with {len(input_data) if input_data else 0} items")
                         
             # If no data from previous nodes, try to get from context input_data
             if not input_data:
                 input_data = context.input_data.get("data", [])
                 debug_logs.append(f"Using context input_data.data: {input_data}")
+                print(f"🔍 Using fallback context.input_data.data: {input_data}")
                 
             # If still no data, try other common keys in context
             if not input_data:
@@ -1363,13 +1642,16 @@ class GoogleSheetsWriteComponent(BaseWorkflowComponent):
             
             # Try to use real Google Sheets API if available
             debug_logs.append(f"GOOGLE_SHEETS_AVAILABLE: {GOOGLE_SHEETS_AVAILABLE}")
+            print(f"🔧 GOOGLE_SHEETS_AVAILABLE in execute: {GOOGLE_SHEETS_AVAILABLE}")
             if GOOGLE_SHEETS_AVAILABLE:
                 debug_logs.append("Attempting to write to Google Sheets API...")
+                print(f"🔧 About to call _write_to_google_sheets")
                 success, result_data = await self._write_to_google_sheets(
                     sheet_id, sheet_name, range_start, mode, processed_data
                 )
                 
                 debug_logs.append(f"Google Sheets API result: success={success}, data={result_data}")
+                print(f"🔧 _write_to_google_sheets returned: success={success}, data={result_data}")
                 
                 if success:
                     execution_time = int((time.time() - start_time) * 1000)
@@ -1389,8 +1671,10 @@ class GoogleSheetsWriteComponent(BaseWorkflowComponent):
                 else:
                     # Fall back to simulation if API fails
                     debug_logs.append(f"Google Sheets API failed, falling back to simulation: {result_data}")
+                    print(f"🔧 Google Sheets API failed, falling back to simulation: {result_data}")
             else:
                 debug_logs.append("Google Sheets API not available, using simulation mode")
+                print(f"🔧 Google Sheets API not available, using simulation mode")
             
             # Simulation mode (fallback)
             result_data = {
@@ -1445,42 +1729,77 @@ class GoogleSheetsWriteComponent(BaseWorkflowComponent):
             tuple: (success: bool, result_data: dict)
         """
         try:
-            # Get Google Sheets service
-            sheets_service = GoogleSheetsService()
+            print(f"🔧 _write_to_google_sheets called with:")
+            print(f"   Sheet ID: {sheet_id}")
+            print(f"   Sheet Name: {sheet_name}")
+            print(f"   Range: {range_start}")
+            print(f"   Mode: {mode}")
+            print(f"   Data rows: {len(data) if data else 0}")
+            
+            # Get Google Sheets service with CORRECT credentials path
+            import os
+            # Use absolute path to credentials.json in backend folder
+            credentials_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "credentials.json")
+            credentials_path = os.path.normpath(credentials_path)
+            
+            print(f"🔧 Credentials path: {credentials_path}")
+            print(f"🔧 Credentials exist: {os.path.exists(credentials_path)}")
+            
+            sheets_service = GoogleSheetsService(credentials_path)
+            print(f"🔧 GoogleSheetsService created")
             
             # Authenticate
-            if not await sheets_service.authenticate():
-                return False, {"error": "Failed to authenticate with Google Sheets API"}
+            print(f"🔧 Attempting authentication...")
+            auth_result = await sheets_service.authenticate()
+            print(f"🔧 Authentication result: {auth_result}")
+            
+            if not auth_result:
+                error_msg = "Failed to authenticate with Google Sheets API"
+                print(f"❌ {error_msg}")
+                return False, {"error": error_msg}
+            
+            print(f"✅ Authentication successful")
             
             # Construct range
             range_name = f"{sheet_name}!{range_start}"
+            print(f"🔧 Range name: {range_name}")
             
             # Handle different write modes
+            print(f"🔧 Handling write mode: {mode}")
             if mode == "append":
+                print(f"🔧 Calling write_to_sheet with append mode")
                 success, result_data = await sheets_service.write_to_sheet(
                     sheet_id, sheet_name, range_start, "append", data
                 )
                 
             elif mode == "overwrite":
+                print(f"🔧 Calling write_to_sheet with overwrite mode")
                 success, result_data = await sheets_service.write_to_sheet(
                     sheet_id, sheet_name, range_start, "overwrite", data
                 )
                 
             elif mode == "clear_write":
+                print(f"🔧 Calling write_to_sheet with clear_write mode")
                 # Use overwrite mode which will replace data
                 success, result_data = await sheets_service.write_to_sheet(
                     sheet_id, sheet_name, "A1", "overwrite", data
                 )
             else:
+                print(f"🔧 Calling write_to_sheet with default overwrite mode")
                 # Default to overwrite
                 success, result_data = await sheets_service.write_to_sheet(
                     sheet_id, sheet_name, range_start, "overwrite", data
                 )
             
+            print(f"🔧 write_to_sheet result: success={success}, data={result_data}")
             return success, result_data
                 
         except Exception as e:
-            return False, {"error": f"Google Sheets API error: {str(e)}"}
+            error_msg = f"Google Sheets API error: {str(e)}"
+            print(f"💥 Exception in _write_to_google_sheets: {error_msg}")
+            import traceback
+            print(f"💥 Traceback: {traceback.format_exc()}")
+            return False, {"error": error_msg}
     
     def _process_input_data(self, data, format_type):
         """Process input data based on specified format"""
@@ -1541,6 +1860,70 @@ class GoogleSheetsWriteComponent(BaseWorkflowComponent):
         
         return data
 
+    def _convert_processed_results_to_sheets(self, processed_results):
+        """
+        Convert AI processing results to Google Sheets format
+        Expected input: [{"row_index": 1, "input_data": {...}, "ai_response": {...}, ...}, ...]
+        Expected output: [["Description", "Example Asset URL", "Desired Output Format", "Model Specification", "Prompt"], [row1 data], ...]
+        """
+        if not processed_results or not isinstance(processed_results, list):
+            return []
+        
+        print(f"🔍 _convert_processed_results_to_sheets called with {len(processed_results)} results")
+        
+        # Create header row - we know from logs that input has these columns plus we want to add Prompt
+        headers = ["Description", "Example Asset URL", "Desired Output Format", "Model Specification", "Prompt"]
+        
+        # Start with header row
+        sheets_data = [headers]
+        
+        # Process each result row
+        for i, result in enumerate(processed_results):
+            if not isinstance(result, dict):
+                print(f"🔍 Row {i}: Not a dict, skipping")
+                continue
+            
+            print(f"🔍 Row {i}: Processing result with keys: {list(result.keys())}")
+            
+            # Get input data (original row data)
+            input_data = result.get("input_data", {})
+            print(f"🔍 Row {i}: input_data keys: {list(input_data.keys()) if isinstance(input_data, dict) else 'Not a dict'}")
+            
+            # Extract AI response - it could be nested in different ways
+            ai_response = ""
+            
+            # Check for direct ai_response first
+            if "ai_response" in result:
+                ai_resp_data = result["ai_response"]
+                print(f"🔍 Row {i}: Found ai_response, type: {type(ai_resp_data)}")
+                
+                if isinstance(ai_resp_data, dict):
+                    # The AI response is nested as result.ai_response.ai_response
+                    ai_response = ai_resp_data.get("ai_response", "")
+                    print(f"🔍 Row {i}: Extracted nested ai_response: {ai_response[:100]}...")
+                elif isinstance(ai_resp_data, str):
+                    # If it's already a string, use it directly
+                    ai_response = ai_resp_data
+                    print(f"🔍 Row {i}: Using direct string ai_response: {ai_response[:100]}...")
+                else:
+                    print(f"🔍 Row {i}: ai_response is neither dict nor string: {type(ai_resp_data)}")
+            else:
+                print(f"🔍 Row {i}: No ai_response key found")
+            
+            # Create row with original data + AI response in Prompt column
+            row = [
+                input_data.get("Description", ""),
+                input_data.get("Example Asset URL", ""),
+                input_data.get("Desired Output Format", ""),
+                input_data.get("Model Specification", ""),
+                ai_response  # This goes in the Prompt column
+            ]
+            
+            print(f"🔍 Row {i}: Final row data - Prompt length: {len(ai_response) if ai_response else 0}")
+            sheets_data.append(row)
+        
+        print(f"🔍 _convert_processed_results_to_sheets returning {len(sheets_data)} rows (including header)")
+        return sheets_data
 
 class GoogleDriveWriteComponent(BaseWorkflowComponent):
     """Component for writing files to Google Drive"""
@@ -1648,21 +2031,33 @@ class GoogleDriveWriteComponent(BaseWorkflowComponent):
                 # Get data from previous node outputs
                 for node_id, node_output in context.previous_outputs.items():
                     debug_logs.append(f"Checking node {node_id}: {type(node_output)}")
+                    print(f"🔍 Drive: Checking node {node_id}: {type(node_output)}")
                     if isinstance(node_output, dict):
-                        # Check for AI Processing data first (has results_for_sheets - perfect for CSV)
-                        if 'results_for_sheets' in node_output and isinstance(node_output['results_for_sheets'], list):
+                        print(f"🔍 Drive: Node {node_id} keys: {list(node_output.keys())}")
+                        
+                        # Priority 1: Check for AI Processing processed_results (contains AI responses)
+                        if 'processed_results' in node_output and isinstance(node_output['processed_results'], list):
+                            print(f"🎯 Drive: Found processed_results in {node_id}: {len(node_output['processed_results'])} rows")
+                            # Convert to sheets format using the same method as GoogleSheetsWriteComponent
+                            sheets_data = self._convert_processed_results_to_sheets_for_drive(node_output['processed_results'])
+                            content_data = {'values': sheets_data}  # Wrap in sheets format
+                            debug_logs.append(f"Found AI Processing data in node {node_id}: {len(sheets_data)} rows")
+                            break
+                        
+                        # Priority 2: Check for AI Processing data (has results_for_sheets - perfect for CSV)
+                        elif 'results_for_sheets' in node_output and isinstance(node_output['results_for_sheets'], list):
                             content_data = {'values': node_output['results_for_sheets']}  # Wrap in sheets format
                             debug_logs.append(f"Found AI Processing data in node {node_id}: {len(node_output['results_for_sheets'])} rows")
                             break
-                        # Check for Google Sheets data (priority for CSV conversion)
+                        # Priority 3: Check for Google Sheets data (fallback)
                         elif 'values' in node_output and isinstance(node_output['values'], list):
-                            content_data = node_output  # Keep the full sheets structure
-                            debug_logs.append(f"Found Google Sheets data in node {node_id}: {len(node_output['values'])} rows")
-                            break
+                            print(f"🔍 Drive: Found values in {node_id}, but skipping in favor of AI processing data...")
+                            # Don't break here, continue to look for AI processing data
+                            pass
                         elif 'records' in node_output and isinstance(node_output['records'], list):
-                            content_data = node_output  # Keep the full sheets structure  
-                            debug_logs.append(f"Found Google Sheets records in node {node_id}: {len(node_output['records'])} records")
-                            break
+                            print(f"🔍 Drive: Found records in {node_id}, but skipping in favor of AI processing data...")
+                            # Don't break here, continue to look for AI processing data
+                            pass
                         else:
                             # Try different possible data keys for other formats
                             data_keys = ["data", "results", "output", "content"]
@@ -1672,6 +2067,22 @@ class GoogleDriveWriteComponent(BaseWorkflowComponent):
                                     debug_logs.append(f"Found data in node {node_id}.{key}: {type(content_data)}")
                                     break
                             if content_data:
+                                break
+                
+                # If no AI processing data found, fallback to Google Sheets data
+                if not content_data:
+                    print(f"🔍 Drive: No AI processing data found, falling back to Google Sheets data...")
+                    for node_id, node_output in context.previous_outputs.items():
+                        if isinstance(node_output, dict):
+                            if 'values' in node_output and isinstance(node_output['values'], list):
+                                content_data = node_output  # Keep the full sheets structure
+                                debug_logs.append(f"Fallback: Found Google Sheets data in node {node_id}: {len(node_output['values'])} rows")
+                                print(f"🔍 Drive: Fallback - Using Google Sheets data from {node_id}")
+                                break
+                            elif 'records' in node_output and isinstance(node_output['records'], list):
+                                content_data = node_output  # Keep the full sheets structure  
+                                debug_logs.append(f"Fallback: Found Google Sheets records in node {node_id}: {len(node_output['records'])} records")
+                                print(f"🔍 Drive: Fallback - Using Google Sheets records from {node_id}")
                                 break
                         
             elif content_source == "input_data":
@@ -1691,9 +2102,23 @@ class GoogleDriveWriteComponent(BaseWorkflowComponent):
             
             # Auto-detect and convert Google Sheets data to CSV if file_type is auto or csv
             if file_type in ["auto", "csv"] and isinstance(content_data, dict):
-                if 'values' in content_data or 'records' in content_data:
+                if 'values' in content_data or 'records' in content_data or 'results_for_sheets' in content_data:
                     file_type = "csv"  # Force CSV for Google Sheets data
+                    if not mimetype:  # Only set if not already specified
+                        mimetype = "text/csv"
                     debug_logs.append("Auto-detected Google Sheets data, converting to CSV format")
+            
+            # Set appropriate MIME type based on file type if not specified
+            if not mimetype:
+                if file_type == "csv":
+                    mimetype = "text/csv"
+                elif file_type == "json":
+                    mimetype = "application/json"
+                elif file_type == "text":
+                    mimetype = "text/plain"
+                else:
+                    mimetype = "application/octet-stream"
+                debug_logs.append(f"Auto-detected MIME type: {mimetype}")
             
             # Convert content to bytes based on file type
             file_content = self._prepare_file_content(content_data, file_type)
@@ -2035,6 +2460,69 @@ class GoogleDriveWriteComponent(BaseWorkflowComponent):
                 return content.encode('utf-8')
             else:
                 return str(data).encode('utf-8')
+
+    def _convert_processed_results_to_sheets_for_drive(self, processed_results):
+        """
+        Convert AI processing results to Google Sheets format for Drive export
+        Same logic as GoogleSheetsWriteComponent._convert_processed_results_to_sheets
+        """
+        if not processed_results or not isinstance(processed_results, list):
+            return []
+        
+        print(f"🔍 Drive: _convert_processed_results_to_sheets_for_drive called with {len(processed_results)} results")
+        
+        # Create header row - we know from logs that input has these columns plus we want to add Prompt
+        headers = ["Description", "Example Asset URL", "Desired Output Format", "Model Specification", "Prompt"]
+        
+        # Start with header row
+        sheets_data = [headers]
+        
+        # Process each result row
+        for i, result in enumerate(processed_results):
+            if not isinstance(result, dict):
+                print(f"🔍 Drive: Row {i}: Not a dict, skipping")
+                continue
+            
+            print(f"🔍 Drive: Row {i}: Processing result with keys: {list(result.keys())}")
+            
+            # Get input data (original row data)
+            input_data = result.get("input_data", {})
+            print(f"🔍 Drive: Row {i}: input_data keys: {list(input_data.keys()) if isinstance(input_data, dict) else 'Not a dict'}")
+            
+            # Extract AI response - nested as result.ai_response.ai_response
+            ai_response = ""
+            
+            if "ai_response" in result:
+                ai_resp_data = result["ai_response"]
+                print(f"🔍 Drive: Row {i}: Found ai_response, type: {type(ai_resp_data)}")
+                
+                if isinstance(ai_resp_data, dict):
+                    # The AI response is nested as result.ai_response.ai_response
+                    ai_response = ai_resp_data.get("ai_response", "")
+                    print(f"🔍 Drive: Row {i}: Extracted nested ai_response: {ai_response[:100]}...")
+                elif isinstance(ai_resp_data, str):
+                    # If it's already a string, use it directly
+                    ai_response = ai_resp_data
+                    print(f"🔍 Drive: Row {i}: Using direct string ai_response: {ai_response[:100]}...")
+                else:
+                    print(f"🔍 Drive: Row {i}: ai_response is neither dict nor string: {type(ai_resp_data)}")
+            else:
+                print(f"🔍 Drive: Row {i}: No ai_response key found")
+            
+            # Create row with original data + AI response in Prompt column
+            row = [
+                input_data.get("Description", ""),
+                input_data.get("Example Asset URL", ""),
+                input_data.get("Desired Output Format", ""),
+                input_data.get("Model Specification", ""),
+                ai_response  # This goes in the Prompt column
+            ]
+            
+            print(f"🔍 Drive: Row {i}: Final row data - Prompt length: {len(ai_response) if ai_response else 0}")
+            sheets_data.append(row)
+        
+        print(f"🔍 Drive: _convert_processed_results_to_sheets_for_drive returning {len(sheets_data)} rows (including header)")
+        return sheets_data
 
 
 # Global component registry instance

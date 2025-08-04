@@ -21,7 +21,7 @@ import 'reactflow/dist/style.css';
 
 import { nodeTypes } from './NodeTypes';
 import DynamicWorkflowSidebar from './DynamicWorkflowSidebar';
-import ExecutionPanel from './ExecutionPanel';
+import EnhancedExecutionPanel from './EnhancedExecutionPanel';
 import DynamicNodeConfigPanel from './DynamicNodeConfigPanel';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useWorkflowEditor, useWorkflowExecution, useWorkflowComponents } from '../../hooks/useEnhancedWorkflow';
@@ -49,10 +49,30 @@ function EnhancedWorkflowEditorInner({ workflowId, onBack }: EnhancedWorkflowEdi
   const [configPanelOpen, setConfigPanelOpen] = useState(false);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 });
-  const [currentInstanceId, setCurrentInstanceId] = useState<string | null>(null);
+  const [currentInstanceId, setCurrentInstanceId] = useState<string | null>(() => {
+    // Try to restore the last instanceId from localStorage
+    const stored = localStorage.getItem('workflow_editor_current_instance');
+    if (stored) {
+      console.log('🔄 Restored currentInstanceId from localStorage:', stored.slice(0, 8) + '...');
+    } else {
+      console.log('📭 No currentInstanceId found in localStorage');
+    }
+    return stored || null;
+  });
   const [workflowName, setWorkflowName] = useState('New Workflow');
   const [workflowDescription, setWorkflowDescription] = useState('');
   const [isModified, setIsModified] = useState(false);
+
+  // Save currentInstanceId to localStorage when it changes
+  useEffect(() => {
+    if (currentInstanceId) {
+      localStorage.setItem('workflow_editor_current_instance', currentInstanceId);
+      console.log('💾 Saved currentInstanceId to localStorage:', currentInstanceId.slice(0, 8) + '...');
+    } else {
+      localStorage.removeItem('workflow_editor_current_instance');
+      console.log('🗑️ Removed currentInstanceId from localStorage');
+    }
+  }, [currentInstanceId]);
 
   // Enhanced hooks
   const { components } = useWorkflowComponents();
@@ -76,6 +96,26 @@ function EnhancedWorkflowEditorInner({ workflowId, onBack }: EnhancedWorkflowEdi
     executeWorkflow,
     stopExecution,
   } = useWorkflowExecution(currentInstanceId || undefined);
+
+  // Fallback: Try to recover currentInstanceId if it's missing but we have execution data
+  useEffect(() => {
+    if (!currentInstanceId && !editorLoading) {
+      // Check if we have recent executions that we could recover from
+      const instancesList = localStorage.getItem('workflow_execution_instances');
+      if (instancesList) {
+        try {
+          const instances = JSON.parse(instancesList);
+          if (instances.length > 0) {
+            const mostRecent = instances[instances.length - 1];
+            console.log('🔧 Auto-recovering currentInstanceId from most recent execution:', mostRecent.slice(0, 8) + '...');
+            setCurrentInstanceId(mostRecent);
+          }
+        } catch (error) {
+          console.warn('Failed to auto-recover currentInstanceId:', error);
+        }
+      }
+    }
+  }, [currentInstanceId, editorLoading]);
 
   // Load workflow if workflowId is provided
   useEffect(() => {
@@ -488,10 +528,12 @@ function EnhancedWorkflowEditorInner({ workflowId, onBack }: EnhancedWorkflowEdi
 
         {/* Execution Panel */}
         {executionPanelOpen && (
-          <ExecutionPanel
+          <EnhancedExecutionPanel
             executionStatus={executionStatus}
             executionLogs={executionLogs}
             executionEvents={executionEvents}
+            instanceId={currentInstanceId || undefined}
+            workflowName={currentWorkflow?.name}
             onClose={() => setExecutionPanelOpen(false)}
           />
         )}

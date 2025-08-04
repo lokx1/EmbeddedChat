@@ -21,12 +21,13 @@ import 'reactflow/dist/style.css';
 import { nodeTypes } from './NodeTypes';
 import WorkflowSidebar from './WorkflowSidebar';
 import { useTheme } from '../../contexts/ThemeContext';
+import demoWorkflow from '../../data/demo_workflow.json';
 
-// Initial empty state
-const initialNodes: Node[] = [];
-const initialEdges: Edge[] = [];
+// Demo workflow với các nodes cần thiết
+const initialNodes: Node[] = demoWorkflow.nodes;
+const initialEdges: Edge[] = demoWorkflow.edges;
 
-let id = 0;
+let id = 5; // Start after demo nodes
 const getId = () => `node_${id++}`;
 
 interface WorkflowEditorProps {

@@ -1,0 +1,88 @@
+{
+  "name": "AI Processing to TEST_NEW Worksheet",
+  "description": "Read from TEST_NEW, process with AI, write back to TEST_NEW with Prompt column",
+  "components": [
+    {
+      "id": "manual_trigger",
+      "type": "manual_trigger",
+      "position": {
+        "x": 100,
+        "y": 200
+      },
+      "config": {
+        "label": "Start",
+        "type": "manual_trigger",
+        "configuration": {}
+      }
+    },
+    {
+      "id": "google_sheets_read",
+      "type": "google_sheets",
+      "position": {
+        "x": 300,
+        "y": 200
+      },
+      "config": {
+        "label": "Read from TEST_NEW",
+        "type": "google_sheets",
+        "configuration": {
+          "sheet_id": "1Wly5cBDxYoPJE3gJtvyPXUpRBzEzuzYOpZPl_Sj4hIc",
+          "worksheet_name": "HEYDO",
+          "range": "A:Z"
+        }
+      }
+    },
+    {
+      "id": "ai_processing",
+      "type": "ai_processing",
+      "position": {
+        "x": 500,
+        "y": 200
+      },
+      "config": {
+        "label": "AI Processing",
+        "type": "ai_processing",
+        "configuration": {
+          "provider": "ollama",
+          "model": "gemma3:1b",
+          "temperature": 0.7,
+          "max_tokens": 1000,
+          "prompt_template": "Create a detailed and comprehensive prompt for generating: {{Description}}. Consider the desired output format: {{Desired Output Format}}. Requirements: {{Model Specification}}"
+        }
+      }
+    },
+    {
+      "id": "google_sheets_write",
+      "type": "google_sheets_write",
+      "position": {
+        "x": 700,
+        "y": 200
+      },
+      "config": {
+        "label": "Write to TEST_NEW",
+        "type": "google_sheets_write",
+        "configuration": {
+          "sheet_id": "1Wly5cBDxYoPJE3gJtvyPXUpRBzEzuzYOpZPl_Sj4hIc",
+          "worksheet_name": "HEYDO",
+          "operation": "overwrite",
+          "range_start": "A1",
+          "mode": "overwrite"
+        }
+      }
+    }
+  ],
+  "connections": [
+    {
+      "source": "manual_trigger",
+      "target": "google_sheets_read"
+    },
+    {
+      "source": "google_sheets_read",
+      "target": "ai_processing"
+    },
+    {
+      "source": "ai_processing",
+      "target": "google_sheets_write"
+    }
+  ]
+}

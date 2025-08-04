@@ -1,0 +1,72 @@
+{
+  "nodes": [
+    {
+      "id": "node_1",
+      "type": "google_sheets",
+      "position": {
+        "x": 100,
+        "y": 100
+      },
+      "data": {
+        "label": "Google Sheets Read",
+        "type": "google_sheets"
+      }
+    },
+    {
+      "id": "node_2",
+      "type": "ai_processing",
+      "position": {
+        "x": 400,
+        "y": 100
+      },
+      "data": {
+        "label": "AI Processing",
+        "type": "ai_processing"
+      }
+    },
+    {
+      "id": "node_3",
+      "type": "google_sheets_write",
+      "position": {
+        "x": 700,
+        "y": 50
+      },
+      "data": {
+        "label": "Google Sheets Write",
+        "type": "google_sheets_write"
+      }
+    },
+    {
+      "id": "node_4",
+      "type": "google_drive_write",
+      "position": {
+        "x": 700,
+        "y": 150
+      },
+      "data": {
+        "label": "Google Drive Write (CSV)",
+        "type": "google_drive_write"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge_1",
+      "source": "node_1",
+      "target": "node_2",
+      "type": "smoothstep"
+    },
+    {
+      "id": "edge_2",
+      "source": "node_2",
+      "target": "node_3",
+      "type": "smoothstep"
+    },
+    {
+      "id": "edge_3",
+      "source": "node_2",
+      "target": "node_4",
+      "type": "smoothstep"
+    }
+  ]
+}

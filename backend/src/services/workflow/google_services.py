@@ -58,7 +58,7 @@ class GoogleSheetsService:
         mode: str, 
         data: List[List[Any]]
     ) -> Tuple[bool, Dict[str, Any]]:
-        """Write data to Google Sheets"""
+        """Write data to Google Sheets with automatic Prompt column creation"""
         try:
             if not self.authenticated or not self.client:
                 return False, {"error": "Not authenticated"}
@@ -69,10 +69,52 @@ class GoogleSheetsService:
             # Try to get the specific worksheet, create if not exists
             try:
                 worksheet = sheet.worksheet(sheet_name)
+                print(f"✅ Found existing worksheet: {sheet_name}")
             except gspread.WorksheetNotFound:
                 # Create new worksheet
                 worksheet = sheet.add_worksheet(title=sheet_name, rows=1000, cols=26)
                 print(f"✅ Created new worksheet: {sheet_name}")
+            
+            # 🎯 NEW: Auto-add Prompt column if needed
+            if data and len(data) > 0:
+                headers = data[0]  # Assume first row is headers
+                existing_headers = []
+                
+                try:
+                    # Get existing headers from worksheet
+                    existing_headers = worksheet.row_values(1) if worksheet.row_count > 0 else []
+                    print(f"📊 Existing headers: {existing_headers}")
+                    print(f"📊 New data headers: {headers}")
+                    
+                    # Check if we need to add Prompt column
+                    if "Prompt" in headers and "Prompt" not in existing_headers:
+                        print(f"🎯 Adding Prompt column to worksheet {sheet_name}")
+                        
+                        # If worksheet is empty or has no headers
+                        if not existing_headers:
+                            # Write the complete new headers
+                            worksheet.update("A1", [headers])
+                            print(f"✅ Added complete headers with Prompt column")
+                        else:
+                            # Find next available column for Prompt
+                            next_col_index = len(existing_headers) + 1
+                            next_col_letter = chr(ord('A') + next_col_index - 1)
+                            
+                            # Add Prompt to headers
+                            worksheet.update(f"{next_col_letter}1", "Prompt")
+                            print(f"✅ Added Prompt column at {next_col_letter}1")
+                            
+                            # Update existing_headers for data alignment
+                            existing_headers.append("Prompt")
+                    
+                    # Align data with existing worksheet structure
+                    if existing_headers and len(existing_headers) != len(headers):
+                        print(f"🔧 Aligning data format...")
+                        data = self._align_data_with_headers(data, headers, existing_headers)
+                        print(f"🔧 Data aligned: {len(data[0]) if data else 0} columns")
+                        
+                except Exception as header_error:
+                    print(f"⚠️ Header alignment error: {header_error}, proceeding with original data")
             
             # Write data based on mode
             if mode == "append":
@@ -104,7 +146,8 @@ class GoogleSheetsService:
                 "data_written": {
                     "rows_count": len(data),
                     "columns_count": len(data[0]) if data else 0,
-                    "format": "auto"
+                    "format": "auto",
+                    "range_written": range_name if mode != "append" else "appended"
                 },
                 "timestamp": datetime.now().isoformat(),
                 "status": "success"
@@ -114,7 +157,29 @@ class GoogleSheetsService:
             
         except Exception as e:
             print(f"❌ Error writing to Google Sheets: {e}")
+            import traceback
+            print(f"❌ Traceback: {traceback.format_exc()}")
             return False, {"error": str(e)}
+    
+    def _align_data_with_headers(self, data: List[List[Any]], source_headers: List[str], target_headers: List[str]) -> List[List[Any]]:
+        """Align data columns with target worksheet headers"""
+        if not data or not source_headers or not target_headers:
+            return data
+            
+        aligned_data = []
+        
+        # Create mapping from source to target positions
+        for row in data:
+            aligned_row = [""] * len(target_headers)
+            
+            for i, source_header in enumerate(source_headers):
+                if i < len(row) and source_header in target_headers:
+                    target_index = target_headers.index(source_header)
+                    aligned_row[target_index] = row[i]
+            
+            aligned_data.append(aligned_row)
+        
+        return aligned_data
     
     async def read_sheet(
         self, 
