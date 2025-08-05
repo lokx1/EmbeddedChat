@@ -223,14 +223,17 @@ cd frontend && npm run dev
 
 ## 🎬 Demo & Screenshots
 
-### Visual Workflow Editor
-![Workflow Editor](https://via.placeholder.com/800x400/667eea/ffffff?text=Visual+Workflow+Editor)
+### 🏠 Main Dashboard Overview
+![Dashboard Overview](./docs/images/dashboard-overview.png)
+*Clean and intuitive dashboard with workspace overview, quick actions, and activity tracking*
 
-### Real-time Execution Monitoring
-![Execution Monitor](https://via.placeholder.com/800x400/2a5298/ffffff?text=Real-time+Execution+Monitor)
+### 🎨 Visual Workflow Editor with Real-time Execution
+![Workflow Editor](./docs/images/workflow-editor.png)
+*Drag & drop workflow builder with component palette, real-time execution monitoring, and node configuration*
 
-### AI Integration Dashboard
-![AI Dashboard](https://via.placeholder.com/800x400/764ba2/ffffff?text=AI+Integration+Dashboard)
+### ⚡ Enhanced Workflow Editor with Live Updates
+![Enhanced Editor](./docs/images/enhanced-workflow-editor.png)
+*Advanced workflow editor featuring live execution updates, comprehensive monitoring panel, and professional email reporting*
 
 ---
 
