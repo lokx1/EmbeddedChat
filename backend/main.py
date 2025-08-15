@@ -9,7 +9,8 @@ from src.core.config import settings
 from src.api.middleware.cors import add_cors_middleware
 from src.api.middleware.rate_limiting import add_rate_limit_middleware
 from src.api.routes import health, chat, documents, auth, dashboard, workflow
-from src.models.database import init_database
+from src.models.database import engine
+from src.models import user, conversation, message, document
 
 
 @asynccontextmanager
@@ -19,25 +20,17 @@ async def lifespan(app: FastAPI):
     print(f"Starting {settings.APP_NAME} v{settings.VERSION}")
     print(f"Environment: {'Development' if settings.DEBUG else 'Production'}")
     
-    # Initialize database
-    try:
-        engine, _ = init_database()
-        print("✅ Database initialized successfully")
-    except Exception as e:
-        print(f"⚠️ Database initialization failed: {e}")
-        print("🔄 Continuing without database...")
+    # Skip table creation - tables already exist
+    # async with engine.begin() as conn:
+    #     # Import all models to ensure they are registered
+    #     from src.models.database import Base
+    #     await conn.run_sync(Base.metadata.create_all)
     
     yield
     
     # Shutdown
     print(f"Shutting down {settings.APP_NAME}")
-    try:
-        engine, _ = init_database()
-        if engine:
-            await engine.dispose()
-            print("✅ Database connection closed")
-    except Exception as e:
-        print(f"⚠️ Error closing database: {e}")
+    await engine.dispose()
 
 
 def create_application() -> FastAPI:
