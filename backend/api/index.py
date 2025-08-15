@@ -1,11 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import os
 
-# Create FastAPI app
+# Create FastAPI app - SIMPLE VERSION
 app = FastAPI(
     title="EmbeddedChat Backend API",
-    version="1.0.0"
+    version="1.0.0",
+    description="Simple API for EmbeddedChat"
 )
 
 # Add CORS middleware
@@ -15,7 +15,8 @@ app.add_middleware(
         "http://localhost:3000",
         "http://localhost:8080", 
         "https://embedded-chat-psi.vercel.app",
-        "https://*.vercel.app"
+        "https://*.vercel.app",
+        "*"  # Allow all for testing
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
@@ -26,19 +27,22 @@ app.add_middleware(
 async def root():
     """Root endpoint"""
     return {
-        "message": "Welcome to EmbeddedChat Backend API",
+        "message": "🚀 EmbeddedChat Backend API is running!",
         "version": "1.0.0",
-        "status": "Backend is running on Vercel!",
+        "status": "success",
+        "platform": "Vercel Serverless",
         "docs": "/docs"
     }
 
 @app.get("/api/test")
 async def test_endpoint():
-    """Simple test endpoint for debugging connectivity"""
+    """Test endpoint for frontend connectivity"""
     return {
-        "status": "success",
-        "message": "Backend API is working on Vercel!",
-        "environment": "production"
+        "status": "success", 
+        "message": "✅ Backend API is working perfectly!",
+        "timestamp": "2025-01-16",
+        "environment": "production",
+        "cors_enabled": True
     }
 
 @app.get("/health")
@@ -46,8 +50,17 @@ async def health_check():
     """Health check endpoint"""
     return {
         "status": "healthy",
-        "service": "embedded-chat-backend"
+        "service": "embedded-chat-backend",
+        "uptime": "ok"
     }
 
-# This is required for Vercel
+@app.get("/api/v1/health")
+async def health_v1():
+    """Health check v1 endpoint"""
+    return {
+        "status": "healthy",
+        "version": "v1"
+    }
+
+# Vercel handler
 handler = app 

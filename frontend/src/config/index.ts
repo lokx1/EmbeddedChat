@@ -17,9 +17,8 @@ export const API_CONFIG = {
     
     // Production environment detection
     if (isProduction || window.location.hostname.includes('vercel.app')) {
-      // Use the actual deployed backend URL
-      // If this doesn't work, we'll provide a fallback
-      return 'https://embedded-chat-backend-h1ym6tqcd-bao-longs-projects-a3dea26a.vercel.app';
+      // Use the NEWEST deployed backend URL with FastAPI
+      return 'https://embedded-chat-backend-bnzj7r6o4-bao-longs-projects-a3dea26a.vercel.app';
     }
     
     // Development fallback

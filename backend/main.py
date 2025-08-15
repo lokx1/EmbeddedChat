@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from contextlib import asynccontextmanager
 import asyncio
+import os
 
 from src.core.config import settings
 from src.api.middleware.cors import add_cors_middleware
@@ -29,7 +30,7 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     print(f"Shutting down {settings.APP_NAME}")
-    # await engine.dispose()
+    await engine.dispose()
 
 
 def create_application() -> FastAPI:
@@ -86,22 +87,13 @@ async def root():
     }
 
 
-@app.get("/api/test")
-async def test_endpoint():
-    """Simple test endpoint for debugging connectivity"""
-    return {
-        "status": "success",
-        "message": "Backend API is working!",
-        "cors_origins": settings.get_cors_origins(),
-        "environment": "development" if settings.DEBUG else "production"
-    }
-
-
 if __name__ == "__main__":
     import uvicorn
+    # Get PORT from environment for Railway, fallback to 8000
+    port = int(os.environ.get("PORT", 8000))
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
-        port=8000,
+        port=port,
         reload=settings.DEBUG
     )
