@@ -29,7 +29,7 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     print(f"Shutting down {settings.APP_NAME}")
-    await engine.dispose()
+    # await engine.dispose()
 
 
 def create_application() -> FastAPI:
@@ -83,6 +83,17 @@ async def root():
         "message": f"Welcome to {settings.APP_NAME}",
         "version": settings.VERSION,
         "docs": "/api/docs"
+    }
+
+
+@app.get("/api/test")
+async def test_endpoint():
+    """Simple test endpoint for debugging connectivity"""
+    return {
+        "status": "success",
+        "message": "Backend API is working!",
+        "cors_origins": settings.get_cors_origins(),
+        "environment": "development" if settings.DEBUG else "production"
     }
 
 

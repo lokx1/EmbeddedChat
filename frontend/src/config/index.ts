@@ -3,11 +3,55 @@
  * Environment variables and configuration settings
  */
 
+// Get the current environment
+const isProduction = import.meta.env?.PROD || false;
+const isDevelopment = import.meta.env?.DEV || false;
+
 // Default API configuration
 export const API_CONFIG = {
-  BASE_URL: (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8000',
+  BASE_URL: (() => {
+    // If VITE_API_BASE_URL is explicitly set, use it
+    if ((import.meta as any).env?.VITE_API_BASE_URL) {
+      return (import.meta as any).env.VITE_API_BASE_URL;
+    }
+    
+    // Production environment detection
+    if (isProduction || window.location.hostname.includes('vercel.app')) {
+      // Use the actual deployed backend URL
+      // If this doesn't work, we'll provide a fallback
+      return 'https://embedded-chat-backend-h1ym6tqcd-bao-longs-projects-a3dea26a.vercel.app';
+    }
+    
+    // Development fallback
+    return 'http://localhost:8000';
+  })(),
   TIMEOUT: 30000, // 30 seconds
   RETRY_ATTEMPTS: 3,
+};
+
+// Debug function to test API connectivity
+export const testAPIConnection = async () => {
+  try {
+    const response = await fetch(`${API_CONFIG.BASE_URL}/api/test`, {
+      method: 'GET',
+      mode: 'cors',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      console.log('✅ Backend API is working:', data);
+      return { success: true, data };
+    } else {
+      console.error('❌ Backend API error:', response.status, response.statusText);
+      return { success: false, error: `HTTP ${response.status}` };
+    }
+  } catch (error) {
+    console.error('❌ Backend API connection failed:', error);
+    return { success: false, error: error.message };
+  }
 };
 
 // Workflow configuration
@@ -41,8 +85,9 @@ export const FEATURES = {
 
 // Environment detection
 export const ENV = {
-  isDevelopment: (import.meta as any).env?.DEV || false,
-  isProduction: (import.meta as any).env?.PROD || false,
+  isDevelopment,
+  isProduction,
+  apiBaseUrl: API_CONFIG.BASE_URL,
 };
 
 export default {

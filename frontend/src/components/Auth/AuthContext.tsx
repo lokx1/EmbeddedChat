@@ -127,10 +127,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         body: JSON.stringify(data)
       });
 
-      const result = await response.json();
+      let result;
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        result = await response.json();
+      } else {
+        // Try to get text for debugging
+        const text = await response.text();
+        throw new Error(`Unexpected response format. Status: ${response.status}. Body: ${text}`);
+      }
 
       if (!response.ok) {
-        throw new Error(result.detail || 'Login failed');
+        throw new Error(result?.detail || 'Login failed');
       }
 
       const { access_token, user } = result;
