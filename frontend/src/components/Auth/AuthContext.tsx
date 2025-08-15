@@ -2,7 +2,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 
 // API configuration
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = 'https://embedded-chat-byqw5hotm-bao-longs-projects-a3dea26a.vercel.app/';
 
 // Types
 export interface User {
