@@ -17,8 +17,13 @@ export const API_CONFIG = {
     
     // Production environment detection
     if (isProduction || window.location.hostname.includes('vercel.app')) {
-      // Use the NEWEST deployed backend URL with FastAPI
-      return 'https://embedded-chat-backend-bnzj7r6o4-bao-longs-projects-a3dea26a.vercel.app';
+      // Railway backend URL (update this when Railway deployment is ready)
+      // For now, fallback to a working endpoint
+      const railwayUrl = 'https://embedded-chat-backend-production.up.railway.app'; // Update this
+      const vercelBackup = 'https://embedded-chat-backend-bnzj7r6o4-bao-longs-projects-a3dea26a.vercel.app';
+      
+      // Try Railway first, fallback to Vercel if needed
+      return railwayUrl;
     }
     
     // Development fallback
@@ -28,29 +33,101 @@ export const API_CONFIG = {
   RETRY_ATTEMPTS: 3,
 };
 
-// Debug function to test API connectivity
+// Enhanced API connection test with fallback
 export const testAPIConnection = async () => {
-  try {
-    const response = await fetch(`${API_CONFIG.BASE_URL}/api/test`, {
-      method: 'GET',
-      mode: 'cors',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-    
-    if (response.ok) {
-      const data = await response.json();
-      console.log('✅ Backend API is working:', data);
-      return { success: true, data };
-    } else {
-      console.error('❌ Backend API error:', response.status, response.statusText);
-      return { success: false, error: `HTTP ${response.status}` };
+  const endpoints = [
+    API_CONFIG.BASE_URL,
+    'https://embedded-chat-backend-bnzj7r6o4-bao-longs-projects-a3dea26a.vercel.app' // Backup
+  ];
+
+  for (const endpoint of endpoints) {
+    try {
+      console.log(`🔄 Testing API endpoint: ${endpoint}`);
+      
+      const response = await fetch(`${endpoint}/health`, {
+        method: 'GET',
+        mode: 'cors',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        signal: AbortSignal.timeout(10000) // 10 second timeout
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log(`✅ Backend API is working at: ${endpoint}`, data);
+        
+        // Update the API_CONFIG to use the working endpoint
+        (API_CONFIG as any).BASE_URL = endpoint;
+        
+        return { success: true, data, endpoint };
+      } else {
+        console.error(`❌ Backend API error at ${endpoint}:`, response.status, response.statusText);
+      }
+    } catch (error) {
+      console.error(`❌ Backend API connection failed for ${endpoint}:`, error);
     }
-  } catch (error) {
-    console.error('❌ Backend API connection failed:', error);
-    return { success: false, error: error.message };
   }
+  
+  return { success: false, error: 'All backend endpoints failed' };
+};
+
+// API Helper functions
+export const apiRequest = async (endpoint: string, options: RequestInit = {}) => {
+  const url = `${API_CONFIG.BASE_URL}${endpoint}`;
+  
+  const defaultOptions: RequestInit = {
+    mode: 'cors',
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
+    ...options,
+  };
+
+  try {
+    const response = await fetch(url, defaultOptions);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error(`API Request failed for ${url}:`, error);
+    throw error;
+  }
+};
+
+// Specific API endpoints for your app
+export const API_ENDPOINTS = {
+  // Health checks
+  HEALTH: '/health',
+  HEALTH_V1: '/api/v1/health',
+  
+  // Authentication
+  AUTH: '/api/v1/auth',
+  LOGIN: '/api/v1/auth/login',
+  REGISTER: '/api/v1/auth/register',
+  
+  // Chat
+  CHAT: '/api/v1/chat',
+  CHAT_HISTORY: '/api/v1/chat/history',
+  
+  // Documents
+  DOCUMENTS: '/api/v1/documents',
+  UPLOAD: '/api/v1/documents/upload',
+  
+  // Dashboard
+  DASHBOARD: '/api/v1/dashboard',
+  STATS: '/api/v1/dashboard/stats',
+  
+  // Workflow
+  WORKFLOW: '/api/v1/workflow',
+  WORKFLOW_EXECUTE: '/api/v1/workflow/execute',
+  
+  // Test endpoint
+  TEST: '/api/test',
 };
 
 // Workflow configuration
@@ -91,8 +168,11 @@ export const ENV = {
 
 export default {
   API_CONFIG,
+  API_ENDPOINTS,
   WORKFLOW_CONFIG,
   UI_CONFIG,
   FEATURES,
   ENV,
+  testAPIConnection,
+  apiRequest,
 };
