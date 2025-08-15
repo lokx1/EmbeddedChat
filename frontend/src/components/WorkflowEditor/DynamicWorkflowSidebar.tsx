@@ -2,7 +2,7 @@
  * Dynamic Workflow Sidebar - sử dụng components từ backend
  */
 import React, { useState } from 'react';
-import { useTheme } from '../../contexts/ThemeContext';
+// import { useTheme } from '../../contexts/ThemeContext'; // Commented out as it's not used
 import { useWorkflowComponents } from '../../hooks/useEnhancedWorkflow';
 import {
   PlayIcon,
@@ -47,7 +47,7 @@ export default function DynamicWorkflowSidebar({
   isOpen = true, 
   onToggle 
 }: DynamicWorkflowSidebarProps) {
-  const { isDark } = useTheme() || { isDark: false };
+  // const { isDark } = useTheme() || { isDark: false }; // Commented out as it's not used
   const { components, loading, error } = useWorkflowComponents();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategories, setSelectedCategories] = useState<string[]>(['triggers', 'data_sources', 'ai_processing', 'control_flow', 'output_actions']);

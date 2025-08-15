@@ -35,7 +35,7 @@ export const WorkflowDashboard: React.FC<WorkflowDashboardProps> = ({ onOpenEdit
   } = useWorkflowInstances();
   
   // Use workflow editor hook for templates
-  const { availableWorkflows: templates, loading: templatesLoading, error: templatesError, fetchAvailableWorkflows: fetchTemplates } = useWorkflowEditor();
+  const { availableWorkflows: templates, /* loading: templatesLoading, error: templatesError, */ fetchAvailableWorkflows: fetchTemplates } = useWorkflowEditor();
 
   const {
     logs,

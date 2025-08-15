@@ -13,7 +13,7 @@ const StorageTestComponent: React.FC = () => {
     executionEvents,
     saveExecution,
     loadExecution,
-    getAllExecutions,
+    // getAllExecutions, // Commented out as it's not used
     getStorageStats
   } = useExecutionStorage(testInstanceId);
 

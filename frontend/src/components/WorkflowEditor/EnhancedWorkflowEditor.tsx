@@ -228,7 +228,7 @@ function EnhancedWorkflowEditorInner({ workflowId, onBack }: EnhancedWorkflowEdi
   );
 
   // Handle node click to open config panel
-  const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
+  const onNodeClick = useCallback((_event: React.MouseEvent, node: Node) => {
     setSelectedNode(node);
     setConfigPanelOpen(true);
   }, []);
