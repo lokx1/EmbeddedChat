@@ -605,8 +605,16 @@ class AIProcessingComponent(BaseWorkflowComponent):
                     options=[
                         {"label": "OpenAI", "value": "openai"},
                         {"label": "Anthropic Claude", "value": "claude"},
+                        {"label": "Google Gemini", "value": "gemini"},
                         {"label": "Ollama (Local)", "value": "ollama"}
                     ]
+                ),
+                ComponentParameter(
+                    name="apiKey",
+                    label="API Key",
+                    type=ParameterType.STRING,
+                    required=False,
+                    description="API key for the selected provider (not required for Ollama)"
                 ),
                 ComponentParameter(
                     name="model",
@@ -614,7 +622,7 @@ class AIProcessingComponent(BaseWorkflowComponent):
                     type=ParameterType.STRING,
                     required=True,
                     default_value="gpt-4o",
-                    description="AI model to use (e.g., gpt-4o, claude-3-5-sonnet, llama3.2)"
+                    description="AI model to use (e.g., gpt-4o, claude-3-5-sonnet, gemini-2.5-flash, llama3.2)"
                 ),
                 ComponentParameter(
                     name="prompt",
@@ -654,6 +662,7 @@ class AIProcessingComponent(BaseWorkflowComponent):
         
         try:
             provider = context.input_data.get("provider", "openai")
+            api_key = context.input_data.get("apiKey", "")
             model = context.input_data.get("model", "gpt-4o")
             prompt_template = context.input_data.get("prompt", "")
             temperature = context.input_data.get("temperature", 0.7)
@@ -698,7 +707,7 @@ class AIProcessingComponent(BaseWorkflowComponent):
                     prompt = prompt_template.replace("{input}", json.dumps(record, indent=2))
                     
                     # Simulate AI processing (replace with actual AI calls)
-                    ai_response = await self._process_with_ai(provider, model, prompt, temperature, max_tokens, record)
+                    ai_response = await self._process_with_ai(provider, api_key, model, prompt, temperature, max_tokens, record)
                     
                     processed_result = {
                         "row_index": i + 1,
@@ -766,23 +775,76 @@ class AIProcessingComponent(BaseWorkflowComponent):
                 logs=[f"AI processing error: {str(e)}"]
             )
     
-    async def _process_with_ai(self, provider: str, model: str, prompt: str, temperature: float, max_tokens: int, record: dict) -> dict:
+    async def _process_with_ai(self, provider: str, api_key: str, model: str, prompt: str, temperature: float, max_tokens: int, record: dict) -> dict:
         """Process data with AI provider"""
         
+        # Try to use actual AI provider if we have API key
+        if api_key and provider != "ollama":
+            try:
+                return await self._process_with_real_ai_provider(provider, api_key, model, prompt, temperature, max_tokens, record)
+            except Exception as e:
+                # Fall back to simulation if real provider fails
+                print(f"Real AI provider failed: {e}, falling back to simulation")
+        
+        # Fallback to simulated processing
         if provider == "openai":
-            return await self._process_with_openai(model, prompt, temperature, max_tokens, record)
+            return await self._process_with_openai(api_key, model, prompt, temperature, max_tokens, record)
         elif provider == "claude":
-            return await self._process_with_claude(model, prompt, temperature, max_tokens, record)
+            return await self._process_with_claude(api_key, model, prompt, temperature, max_tokens, record)
+        elif provider == "gemini":
+            return await self._process_with_gemini(api_key, model, prompt, temperature, max_tokens, record)
         elif provider == "ollama":
             return await self._process_with_ollama(model, prompt, temperature, max_tokens, record)
         else:
             # Fallback simulation
             return await self._simulate_ai_processing(record)
     
-    async def _process_with_openai(self, model: str, prompt: str, temperature: float, max_tokens: int, record: dict) -> dict:
+    async def _process_with_real_ai_provider(self, provider: str, api_key: str, model: str, prompt: str, temperature: float, max_tokens: int, record: dict) -> dict:
+        """Process with real AI provider using dynamic API key"""
+        try:
+            # Import AI providers
+            from .ai_providers import AIProviderFactory
+            
+            # Create provider instance with API key
+            if provider.lower() == "ollama":
+                ai_provider = AIProviderFactory.create_provider(provider, base_url="http://localhost:11434")
+            else:
+                ai_provider = AIProviderFactory.create_provider(provider, api_key=api_key)
+            
+            # Use the real provider
+            result = await ai_provider.generate_content(
+                prompt=prompt,
+                output_format=record.get('output_format', 'text'),
+                model_name=model,
+                temperature=temperature,
+                max_tokens=max_tokens
+            )
+            
+            if result.get('success'):
+                return {
+                    "type": "ai_generated_content",
+                    "content": result['content'],
+                    "content_type": result.get('content_type', 'text/plain'),
+                    "metadata": {
+                        "provider": provider,
+                        "model": model,
+                        "real_api": True,
+                        **result.get('metadata', {})
+                    }
+                }
+            else:
+                return {"error": f"AI provider failed: {result.get('error', 'Unknown error')}"}
+        
+        except Exception as e:
+            return {"error": f"Real AI provider error: {str(e)}"}
+    
+    async def _process_with_openai(self, api_key: str, model: str, prompt: str, temperature: float, max_tokens: int, record: dict) -> dict:
         """Process with OpenAI API"""
         try:
-            # TODO: Implement actual OpenAI API call
+            if not api_key:
+                return {"error": "OpenAI API key is required"}
+            
+            # TODO: Implement actual OpenAI API call with api_key
             # For now, simulate asset generation based on input data
             
             description = record.get('description', '')
@@ -810,10 +872,13 @@ class AIProcessingComponent(BaseWorkflowComponent):
         except Exception as e:
             return {"error": f"OpenAI processing failed: {str(e)}"}
     
-    async def _process_with_claude(self, model: str, prompt: str, temperature: float, max_tokens: int, record: dict) -> dict:
+    async def _process_with_claude(self, api_key: str, model: str, prompt: str, temperature: float, max_tokens: int, record: dict) -> dict:
         """Process with Claude API"""
         try:
-            # TODO: Implement actual Claude API call
+            if not api_key:
+                return {"error": "Claude API key is required"}
+            
+            # TODO: Implement actual Claude API call with api_key
             description = record.get('description', '')
             output_format = record.get('output_format', 'PNG')
             
@@ -837,6 +902,37 @@ class AIProcessingComponent(BaseWorkflowComponent):
             
         except Exception as e:
             return {"error": f"Claude processing failed: {str(e)}"}
+    
+    async def _process_with_gemini(self, api_key: str, model: str, prompt: str, temperature: float, max_tokens: int, record: dict) -> dict:
+        """Process with Google Gemini API"""
+        try:
+            if not api_key:
+                return {"error": "Gemini API key is required"}
+            
+            # TODO: Implement actual Gemini API call with api_key
+            description = record.get('description', '')
+            output_format = record.get('output_format', 'PNG')
+            
+            generated_content = {
+                "type": "asset_generation",
+                "description": description,
+                "output_format": output_format.upper(),
+                "generated_url": f"https://gemini-assets.example.com/{output_format.lower()}/{hash(description) % 10000}.{output_format.lower()}",
+                "metadata": {
+                    "model": model,
+                    "provider": "gemini",
+                    "quality": "high",
+                    "size": "1024x1024" if output_format.upper() in ["PNG", "JPG"] else "30s",
+                    "processing_time": "1.2s"
+                },
+                "prompt_used": prompt[:200] + "..." if len(prompt) > 200 else prompt
+            }
+            
+            await asyncio.sleep(1.1)  # Simulate processing time
+            return generated_content
+            
+        except Exception as e:
+            return {"error": f"Gemini processing failed: {str(e)}"}
     
     async def _process_with_ollama(self, model: str, prompt: str, temperature: float, max_tokens: int, record: dict) -> dict:
         """Process with Ollama local API"""

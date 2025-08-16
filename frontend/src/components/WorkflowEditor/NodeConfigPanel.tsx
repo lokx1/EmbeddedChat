@@ -12,14 +12,59 @@ interface NodeConfigPanelProps {
 
 export default function NodeConfigPanel({ node, onUpdateNode, onDeleteNode }: NodeConfigPanelProps) {
   const [formData, setFormData] = useState(node.data || {});
+  const [errors, setErrors] = useState<{[key: string]: string}>({});
 
   useEffect(() => {
     setFormData(node.data || {});
   }, [node]);
 
+  const validateAPIKey = (provider: string, apiKey: string): string | null => {
+    if (!apiKey && provider !== 'ollama') {
+      return 'API Key is required for cloud providers';
+    }
+    
+    if (apiKey) {
+      switch (provider) {
+        case 'openai':
+          if (!apiKey.startsWith('sk-')) {
+            return 'OpenAI API key should start with "sk-"';
+          }
+          break;
+        case 'claude':
+          if (!apiKey.startsWith('sk-ant-')) {
+            return 'Claude API key should start with "sk-ant-"';
+          }
+          break;
+        case 'gemini':
+          if (apiKey.length < 10) {
+            return 'Gemini API key seems too short';
+          }
+          break;
+      }
+    }
+    
+    return null;
+  };
+
   const handleInputChange = (field: string, value: any) => {
     const newData = { ...formData, [field]: value };
+    const newErrors = { ...errors };
+    
+    // Validate API key if it's being changed or provider is changed
+    if (field === 'apiKey' || field === 'provider') {
+      const provider = field === 'provider' ? value : newData.provider;
+      const apiKey = field === 'apiKey' ? value : newData.apiKey;
+      
+      const apiKeyError = validateAPIKey(provider, apiKey);
+      if (apiKeyError) {
+        newErrors.apiKey = apiKeyError;
+      } else {
+        delete newErrors.apiKey;
+      }
+    }
+    
     setFormData(newData);
+    setErrors(newErrors);
     onUpdateNode(node.id, newData);
   };
 
@@ -81,9 +126,45 @@ export default function NodeConfigPanel({ node, onUpdateNode, onDeleteNode }: No
               >
                 <option value="openai">OpenAI</option>
                 <option value="claude">Anthropic Claude</option>
+                <option value="gemini">Google Gemini</option>
                 <option value="ollama">Ollama (Local)</option>
               </select>
             </div>
+            {/* API Key field - show only for cloud providers */}
+            {formData.provider !== 'ollama' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  API Key
+                  <span className="text-red-500 ml-1">*</span>
+                </label>
+                <input
+                  type="password"
+                  value={formData.apiKey || ''}
+                  onChange={(e) => handleInputChange('apiKey', e.target.value)}
+                  placeholder={
+                    formData.provider === 'openai' ? 'sk-...' :
+                    formData.provider === 'claude' ? 'sk-ant-...' :
+                    formData.provider === 'gemini' ? 'AI...' :
+                    'Enter your API key'
+                  }
+                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:border-transparent ${
+                    errors.apiKey 
+                      ? 'border-red-300 focus:ring-red-500' 
+                      : 'border-gray-300 focus:ring-blue-500'
+                  }`}
+                />
+                {errors.apiKey && (
+                  <p className="text-xs text-red-500 mt-1">{errors.apiKey}</p>
+                )}
+                {!errors.apiKey && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    {formData.provider === 'openai' && 'Get your API key from OpenAI Dashboard'}
+                    {formData.provider === 'claude' && 'Get your API key from Anthropic Console'}
+                    {formData.provider === 'gemini' && 'Get your API key from Google AI Studio'}
+                  </p>
+                )}
+              </div>
+            )}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Model
@@ -92,7 +173,7 @@ export default function NodeConfigPanel({ node, onUpdateNode, onDeleteNode }: No
                 type="text"
                 value={formData.model || 'gpt-4o'}
                 onChange={(e) => handleInputChange('model', e.target.value)}
-                placeholder="gpt-4o, claude-3-5-sonnet, llama3.2"
+                placeholder="gpt-4o, claude-3-5-sonnet, gemini-2.5-flash, llama3.2"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>

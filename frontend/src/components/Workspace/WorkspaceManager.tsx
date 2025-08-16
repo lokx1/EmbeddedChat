@@ -14,14 +14,11 @@ import {
   Cog6ToothIcon 
 } from '@heroicons/react/24/outline';
 
+import ChatContainer from '../Chat/ChatContainer';
+
 // Placeholder components for different modules
 const ChatModule = () => (
-  <div className="h-full overflow-auto p-6">
-    <h2 className="text-2xl font-bold text-gray-900 mb-4">Chat Module</h2>
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-      <p className="text-gray-600">Chat interface will be implemented here.</p>
-    </div>
-  </div>
+  <ChatContainer className="h-full" />
 );
 
 const DocumentModule = () => (

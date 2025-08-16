@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini Integration Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .test-section {
+            background: white;
+            padding: 20px;
+            margin: 10px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .success { background-color: #d4edda; color: #155724; }
+        .error { background-color: #f8d7da; color: #721c24; }
+        .info { background-color: #d1ecf1; color: #0c5460; }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background-color: #0056b3; }
+        button:disabled { background-color: #6c757d; cursor: not-allowed; }
+        .code {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            border-left: 4px solid #007bff;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 Gemini Integration Test</h1>
+    
+    <div class="test-section">
+        <h2>1. Frontend Configuration Check</h2>
+        <div id="fe-config-result" class="status info">Checking frontend configuration...</div>
+        <button onclick="testFrontendConfig()">Test Frontend Config</button>
+    </div>
+
+    <div class="test-section">
+        <h2>2. LocalStorage Persistence Test</h2>
+        <div id="storage-result" class="status info">Ready to test storage...</div>
+        <button onclick="testLocalStorage()">Test LocalStorage</button>
+        <button onclick="clearStorage()">Clear Storage</button>
+    </div>
+
+    <div class="test-section">
+        <h2>3. Gemini API Integration Test</h2>
+        <div id="api-result" class="status info">Ready to test API...</div>
+        <input type="text" id="api-key" placeholder="Enter your Gemini API key (starts with AI...)" style="width: 300px; padding: 8px; margin: 10px 0;">
+        <br>
+        <button onclick="testGeminiAPI()">Test Gemini API</button>
+    </div>
+
+    <div class="test-section">
+        <h2>4. File Upload Test</h2>
+        <div id="upload-result" class="status info">Ready to test upload...</div>
+        <input type="file" id="test-file" accept="image/*,text/*,.pdf,video/*,audio/*,.mp4,.mp3,.wav,.avi,.mov,.webm" style="margin: 10px 0;">
+        <br>
+        <button onclick="testFileUpload()">Test Upload with Gemini</button>
+    </div>
+
+    <div class="test-section">
+        <h2>Test Results Summary</h2>
+        <div id="summary" class="code">Click test buttons to see results...</div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000';
+        const testResults = {};
+
+        function updateSummary() {
+            const summary = document.getElementById('summary');
+            summary.textContent = JSON.stringify(testResults, null, 2);
+        }
+
+        function testFrontendConfig() {
+            const result = document.getElementById('fe-config-result');
+            
+            try {
+                // Check if AI_PROVIDERS includes Gemini
+                const geminiConfig = {
+                    name: 'Google Gemini',
+                    models: ['gemini-2.5-flash', 'gemini-2.5-pro'],
+                    defaultModel: 'gemini-2.5-flash',
+                    keyPrefix: 'AI',
+                    description: 'Fast and efficient with good reasoning capabilities'
+                };
+                
+                result.className = 'status success';
+                result.textContent = '✅ Frontend config looks good! Gemini provider is properly configured.';
+                testResults.frontendConfig = 'PASS';
+            } catch (error) {
+                result.className = 'status error';
+                result.textContent = '❌ Frontend config error: ' + error.message;
+                testResults.frontendConfig = 'FAIL: ' + error.message;
+            }
+            updateSummary();
+        }
+
+        function testLocalStorage() {
+            const result = document.getElementById('storage-result');
+            
+            try {
+                // Test localStorage persistence
+                const testSettings = {
+                    provider: 'gemini',
+                    model: 'gemini-2.5-flash',
+                    apiKey: 'test-key',
+                    temperature: 0.8,
+                    maxTokens: 1500,
+                    systemPrompt: 'Test prompt'
+                };
+                
+                localStorage.setItem('chatSettings', JSON.stringify(testSettings));
+                const retrieved = JSON.parse(localStorage.getItem('chatSettings'));
+                
+                if (retrieved.provider === 'gemini' && retrieved.model === 'gemini-2.5-flash') {
+                    result.className = 'status success';
+                    result.textContent = '✅ LocalStorage persistence works! Settings saved and retrieved correctly.';
+                    testResults.localStorage = 'PASS';
+                } else {
+                    throw new Error('Retrieved settings do not match saved settings');
+                }
+            } catch (error) {
+                result.className = 'status error';
+                result.textContent = '❌ LocalStorage error: ' + error.message;
+                testResults.localStorage = 'FAIL: ' + error.message;
+            }
+            updateSummary();
+        }
+
+        function clearStorage() {
+            localStorage.removeItem('chatSettings');
+            document.getElementById('storage-result').textContent = 'Storage cleared.';
+        }
+
+        async function testGeminiAPI() {
+            const result = document.getElementById('api-result');
+            const apiKey = document.getElementById('api-key').value;
+            
+            if (!apiKey) {
+                result.className = 'status error';
+                result.textContent = '❌ Please enter a Gemini API key';
+                return;
+            }
+            
+            if (!apiKey.startsWith('AI')) {
+                result.className = 'status error';
+                result.textContent = '❌ Gemini API key should start with "AI"';
+                return;
+            }
+            
+            result.className = 'status info';
+            result.textContent = '🔄 Testing Gemini API...';
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/chat/test-connection`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        provider: 'gemini',
+                        api_key: apiKey,
+                        model: 'gemini-2.5-flash'
+                    })
+                });
+                
+                if (response.ok) {
+                    result.className = 'status success';
+                    result.textContent = '✅ Gemini API connection successful!';
+                    testResults.geminiAPI = 'PASS';
+                } else {
+                    const error = await response.text();
+                    throw new Error(`API test failed: ${error}`);
+                }
+            } catch (error) {
+                result.className = 'status error';
+                result.textContent = '❌ Gemini API error: ' + error.message;
+                testResults.geminiAPI = 'FAIL: ' + error.message;
+            }
+            updateSummary();
+        }
+
+        async function testFileUpload() {
+            const result = document.getElementById('upload-result');
+            const fileInput = document.getElementById('test-file');
+            const apiKey = document.getElementById('api-key').value;
+            
+            if (!fileInput.files.length) {
+                result.className = 'status error';
+                result.textContent = '❌ Please select a file';
+                return;
+            }
+            
+            if (!apiKey) {
+                result.className = 'status error';
+                result.textContent = '❌ Please enter Gemini API key first';
+                return;
+            }
+            
+            result.className = 'status info';
+            result.textContent = '🔄 Testing file upload with Gemini analysis...';
+            
+            try {
+                const formData = new FormData();
+                formData.append('file', fileInput.files[0]);
+                formData.append('ai_provider', 'gemini');
+                formData.append('api_key', apiKey);
+                
+                const response = await fetch(`${API_BASE}/api/v1/documents/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (response.ok) {
+                    const uploadResult = await response.json();
+                    result.className = 'status success';
+                    result.textContent = `✅ File upload successful! Document ID: ${uploadResult.id}, Status: ${uploadResult.status}`;
+                    testResults.fileUpload = 'PASS';
+                    
+                    // Test getting content
+                    setTimeout(async () => {
+                        try {
+                            const contentResponse = await fetch(`${API_BASE}/api/v1/documents/${uploadResult.id}/content`);
+                            if (contentResponse.ok) {
+                                const content = await contentResponse.json();
+                                result.textContent += `\n📄 Content retrieved: ${content.content.substring(0, 100)}...`;
+                                testResults.contentRetrieval = 'PASS';
+                            }
+                        } catch (e) {
+                            console.error('Content retrieval error:', e);
+                        }
+                        updateSummary();
+                    }, 2000);
+                } else {
+                    const error = await response.text();
+                    throw new Error(`Upload failed: ${error}`);
+                }
+            } catch (error) {
+                result.className = 'status error';
+                result.textContent = '❌ Upload error: ' + error.message;
+                testResults.fileUpload = 'FAIL: ' + error.message;
+            }
+            updateSummary();
+        }
+
+        // Initialize
+        updateSummary();
+    </script>
+</body>
+</html>

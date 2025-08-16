@@ -15,7 +15,7 @@ from src.models import user, conversation, message, document
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Handle application startup and shutdown"""
-    # Startup
+    # Startup   
     print(f"Starting {settings.APP_NAME} v{settings.VERSION}")
     print(f"Environment: {'Development' if settings.DEBUG else 'Production'}")
     
@@ -57,7 +57,7 @@ def create_application() -> FastAPI:
     # Include routers
     app.include_router(health.router, prefix=settings.API_V1_STR)
     app.include_router(auth.router, prefix=settings.API_V1_STR)
-    app.include_router(chat.router, prefix=settings.API_V1_STR)
+    app.include_router(chat.router, prefix=f"{settings.API_V1_STR}/chat")
     app.include_router(documents.router, prefix=settings.API_V1_STR)
     app.include_router(dashboard.router, prefix=f"{settings.API_V1_STR}/dashboard")
     app.include_router(workflow.router, prefix=settings.API_V1_STR)
@@ -65,7 +65,7 @@ def create_application() -> FastAPI:
     # Include routers without prefix for backward compatibility
     app.include_router(health.router, tags=["health-v0"])
     app.include_router(auth.router, tags=["auth-v0"])
-    app.include_router(chat.router, tags=["chat-v0"])
+    app.include_router(chat.router, prefix="/chat", tags=["chat-v0"])
     app.include_router(documents.router, tags=["documents-v0"])
     app.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard-v0"])
     

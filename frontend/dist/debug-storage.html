@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>localStorage Test</title>
+</head>
+<body>
+    <h1>localStorage Debug Test</h1>
+    
+    <button onclick="checkStorage()">🔍 Check Storage</button>
+    <button onclick="clearStorage()">🧹 Clear Storage</button>
+    <button onclick="saveTestData()">💾 Save Test Data</button>
+    
+    <div id="output" style="margin-top: 20px; padding: 10px; background: #f5f5f5; white-space: pre-wrap; font-family: monospace;"></div>
+
+    <script>
+        function log(message) {
+            const output = document.getElementById('output');
+            output.innerHTML += message + '\n';
+            console.log(message);
+        }
+
+        function clearOutput() {
+            document.getElementById('output').innerHTML = '';
+        }
+
+        function checkStorage() {
+            clearOutput();
+            log('=== localStorage Check ===');
+            
+            // Check all workflow execution keys
+            const allKeys = Object.keys(localStorage);
+            const executionKeys = allKeys.filter(key => key.startsWith('workflow_execution_'));
+            
+            log('Total keys in localStorage: ' + allKeys.length);
+            log('Workflow execution keys: ' + executionKeys.length);
+            
+            if (executionKeys.length === 0) {
+                log('❌ No workflow execution data found');
+                return;
+            }
+            
+            // Show instances list
+            const instancesList = localStorage.getItem('workflow_execution_instances');
+            if (instancesList) {
+                log('📝 Instances list: ' + instancesList);
+            } else {
+                log('❌ No instances list found');
+            }
+            
+            // Check current instance
+            const currentInstance = localStorage.getItem('workflow_editor_current_instance');
+            if (currentInstance) {
+                log('📌 Current instance: ' + currentInstance);
+            } else {
+                log('❌ No current instance saved');
+            }
+            
+            // Show each execution data
+            executionKeys.forEach(key => {
+                try {
+                    const data = JSON.parse(localStorage.getItem(key));
+                    log('📂 ' + key + ':');
+                    log('  - instanceId: ' + data.instanceId);
+                    log('  - logs: ' + (data.executionLogs?.length || 0));
+                    log('  - events: ' + (data.executionEvents?.length || 0));
+                    log('  - status: ' + (data.executionStatus?.status || 'none'));
+                    log('  - lastUpdated: ' + data.lastUpdated);
+                    log('  - createdAt: ' + data.createdAt);
+                } catch (error) {
+                    log('❌ Failed to parse ' + key + ': ' + error.message);
+                }
+            });
+        }
+
+        function clearStorage() {
+            clearOutput();
+            const allKeys = Object.keys(localStorage);
+            const executionKeys = allKeys.filter(key => 
+                key.startsWith('workflow_execution_') || 
+                key === 'workflow_editor_current_instance'
+            );
+            
+            executionKeys.forEach(key => localStorage.removeItem(key));
+            
+            log('🧹 Cleared ' + executionKeys.length + ' workflow-related keys');
+            log('Cleared keys: ' + executionKeys.join(', '));
+        }
+
+        function saveTestData() {
+            clearOutput();
+            const testInstanceId = 'test-' + Date.now();
+            
+            // Save test execution data
+            const testData = {
+                instanceId: testInstanceId,
+                executionStatus: {
+                    id: testInstanceId,
+                    instance_id: testInstanceId,
+                    status: 'completed',
+                    started_at: new Date().toISOString(),
+                    completed_at: new Date().toISOString(),
+                    is_running: false
+                },
+                executionLogs: [
+                    {
+                        id: '1',
+                        step_name: 'Test Step',
+                        level: 'info',
+                        message: 'Test log message',
+                        timestamp: new Date().toISOString(),
+                        status: 'success',
+                        source: 'test',
+                        created_at: new Date().toISOString()
+                    }
+                ],
+                executionEvents: [
+                    {
+                        id: '1',
+                        event_type: 'execution_completed',
+                        timestamp: new Date().toISOString(),
+                        data: { message: 'Test completed' }
+                    }
+                ],
+                lastUpdated: new Date().toISOString(),
+                createdAt: new Date().toISOString(),
+                isCompleted: true,
+                workflowName: 'Test Workflow'
+            };
+            
+            // Save the data
+            localStorage.setItem('workflow_execution_' + testInstanceId, JSON.stringify(testData));
+            
+            // Update instances list
+            const instancesList = JSON.parse(localStorage.getItem('workflow_execution_instances') || '[]');
+            instancesList.push(testInstanceId);
+            localStorage.setItem('workflow_execution_instances', JSON.stringify(instancesList));
+            
+            // Set as current instance
+            localStorage.setItem('workflow_editor_current_instance', testInstanceId);
+            
+            log('💾 Saved test data with instance ID: ' + testInstanceId);
+            log('✅ Test data should now be available');
+        }
+
+        // Auto-check on page load
+        window.onload = checkStorage;
+    </script>
+</body>
+</html>

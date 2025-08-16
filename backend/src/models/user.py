@@ -18,3 +18,4 @@ class User(BaseModel):
     # Relationships
     conversations = relationship("Conversation", back_populates="user")
     messages = relationship("Message", back_populates="user")
+    chat_conversations = relationship("ChatConversation", back_populates="user")
