@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     
     # CORS - simple string, will be split by comma
-    BACKEND_CORS_ORIGINS: str = "http://localhost:3000,http://localhost:8080"
+    BACKEND_CORS_ORIGINS: str = "http://localhost:3000,http://localhost:8080,https://embedded-chat-ten.vercel.app"
     
     def get_cors_origins(self) -> List[str]:
         """Get CORS origins as list"""
