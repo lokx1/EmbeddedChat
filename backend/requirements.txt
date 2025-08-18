@@ -13,7 +13,7 @@ python-multipart
 aiofiles
 httpx
 email-validator
-
+psycopg2
 # Testing
 pytest
 pytest-asyncio
