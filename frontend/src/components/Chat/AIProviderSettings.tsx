@@ -104,8 +104,8 @@ export default function AIProviderSettings({ settings, onUpdate, onClose }: AIPr
   // Reset to defaults
   const resetToDefaults = () => {
     const defaultSettings: ChatSettings = {
-      provider: 'openai',
-      model: 'gpt-4o',
+      provider: 'gemini',
+      model: 'gemini-2.5-flash',
       apiKey: '',
       temperature: 0.7,
       maxTokens: 2000,

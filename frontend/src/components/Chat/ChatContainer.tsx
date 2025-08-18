@@ -42,12 +42,15 @@ export default function ChatContainer({ className = '' }: ChatContainerProps) {
     try {
       const savedSettings = localStorage.getItem('chatSettings');
       if (savedSettings) {
-        return JSON.parse(savedSettings);
+        const parsed = JSON.parse(savedSettings);
+        console.log('Chat settings loaded from localStorage:', parsed.provider); // Debug log
+        return parsed;
       }
     } catch (error) {
       console.error('Failed to load chat settings:', error);
     }
     
+    console.log('Using default chat settings: gemini'); // Debug log
     // Default settings
     return {
       provider: 'gemini',
@@ -75,6 +78,7 @@ export default function ChatContainer({ className = '' }: ChatContainerProps) {
   useEffect(() => {
     try {
       localStorage.setItem('chatSettings', JSON.stringify(chatSettings));
+      console.log('Chat settings saved:', chatSettings.provider); // Debug log
     } catch (error) {
       console.error('Failed to save chat settings:', error);
     }
@@ -124,11 +128,17 @@ export default function ChatContainer({ className = '' }: ChatContainerProps) {
       const data = await conversationService.getConversation(conversationId);
       setMessages(data.messages);
       
-      // Update chat settings with conversation settings
-      setChatSettings(prev => ({
-        ...prev,
-        ...data.settings
-      }));
+      // Only update non-provider related settings from conversation
+      // Keep user's preferred AI provider, model, and API key
+      if (data.settings) {
+        setChatSettings(prev => ({
+          ...prev,
+          // Only update these specific settings, preserve provider preferences
+          temperature: data.settings.temperature ?? prev.temperature,
+          maxTokens: data.settings.maxTokens ?? prev.maxTokens,
+          systemPrompt: data.settings.systemPrompt ?? prev.systemPrompt
+        }));
+      }
     } catch (error) {
       console.error('Failed to load conversation:', error);
       setMessages([]);
@@ -294,7 +304,15 @@ export default function ChatContainer({ className = '' }: ChatContainerProps) {
 
   // Update chat settings
   const handleSettingsUpdate = (newSettings: Partial<ChatSettings>) => {
+    console.log('Updating chat settings with:', newSettings); // Debug log
     setChatSettings(prev => ({ ...prev, ...newSettings }));
+  };
+
+  // Debug function to check localStorage (can be called from browser console)
+  (window as any).debugChatSettings = () => {
+    const saved = localStorage.getItem('chatSettings');
+    console.log('Current localStorage chatSettings:', saved ? JSON.parse(saved) : 'not found');
+    console.log('Current state chatSettings:', chatSettings);
   };
 
   // Load user documents
