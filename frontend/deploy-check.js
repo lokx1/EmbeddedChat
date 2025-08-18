@@ -51,7 +51,7 @@ try {
 // Kiểm tra TypeScript
 console.log('\n🔧 Kiểm tra TypeScript:');
 try {
-  execSync('npx tsc --noEmit', { stdio: 'inherit' });
+  execSync('npm run type-check', { stdio: 'inherit' });
   console.log('✅ TypeScript compilation successful');
 } catch (error) {
   console.log('❌ TypeScript compilation failed');

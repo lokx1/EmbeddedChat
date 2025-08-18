@@ -7,10 +7,27 @@ npm run deploy-check
 ```
 
 ## Bước 2: Push code lên GitHub
+
+### Nếu đã push nhầm node_modules:
+```bash
+# Chạy script dọn dẹp (Windows PowerShell)
+.\clean-and-push.ps1
+
+# Hoặc chạy script dọn dẹp (Linux/Mac)
+chmod +x clean-and-push.sh
+./clean-and-push.sh
+
+# Sau đó push lại
+git add .
+git commit -m "Remove node_modules and clean repository"
+git push origin BE-FE-DEPLOYMENT
+```
+
+### Push code bình thường:
 ```bash
 git add .
 git commit -m "Prepare for Vercel deployment"
-git push origin main
+git push origin BE-FE-DEPLOYMENT
 ```
 
 ## Bước 3: Deploy trên Vercel
@@ -54,6 +71,7 @@ Sau khi deploy thành công:
 ### Lỗi build
 ```bash
 npm run lint
+npm run type-check
 npm run build
 ```
 
