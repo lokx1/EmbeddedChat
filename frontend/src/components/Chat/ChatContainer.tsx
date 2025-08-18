@@ -13,7 +13,7 @@ import { Message, ChatSettings, AIProvider } from './types';
 import { chatService } from '../../services/chatService';
 import { conversationService } from '../../services/conversationService';
 import { documentService, Document } from '../../services/documentService';
-import UserSwitcher from '../Debug/UserSwitcher';
+import UserSwitcher from '../debug/UserSwitcher';
 
 interface ChatContainerProps {
   className?: string;
