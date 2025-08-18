@@ -133,7 +133,7 @@ export interface ApiResponse<T> {
 }
 
 class EnhancedWorkflowEditorApi {
-  private readonly baseUrl = `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/v1/workflow`;
+  private readonly baseUrl = `${(import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '')}/api/v1/workflow`;
 
   private async request<T>(
     endpoint: string,
@@ -231,7 +231,7 @@ class EnhancedWorkflowEditorApi {
 
   // WebSocket connection for real-time updates
   connectToExecutionUpdates(instanceId: string): WebSocket {
-    const wsUrl = `${(import.meta.env.VITE_API_URL || 'http://localhost:8000').replace('https://', 'wss://').replace('http://', 'ws://')}/api/v1/workflow/ws/${instanceId}`;
+    const wsUrl = `${(import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '').replace('https://', 'wss://').replace('http://', 'ws://')}/api/v1/workflow/ws/${instanceId}`;
     return new WebSocket(wsUrl);
   }
 
