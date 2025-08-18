@@ -1,0 +1,83 @@
+# Railway ignore file - exclude these from build
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test files
+tests/
+test_*.py
+*_test.py
+
+# Documentation
+*.md
+docs/
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Upload directories
+uploads/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Environment files
+.env
+.env.local
+
+# Git
+.git/
+.gitignore
+
+# Large data directories
+data/
+
+# Migration files (được chạy qua script)
+migrations/
+
+# Scripts không cần thiết cho production
+scripts/
+check_*.py
+debug_*.py
+test_*.py
+setup_*.py
+create_*.py
+monitor_*.py
+oauth_*.py
+simple_*.py
+verify_*.py
+populate_*.py
+init_*.py
+manual_*.py
+fix_*.py
+reset_*.py
+print_*.py
+clean_*.py
+
+# Batch files
+*.bat
+
+# Docker files (không cần thiết vì dùng Nixpacks)
+Dockerfile
+docker-compose.yml
