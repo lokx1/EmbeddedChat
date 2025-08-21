@@ -50,7 +50,7 @@ export interface ApiResponse<T> {
 }
 
 class WorkflowApiService {
-  private baseUrl = 'http://localhost:8000';
+  private baseUrl = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '');
   private apiUrl = `${this.baseUrl}/api/v1/workflow`;
 
   private async request<T>(
