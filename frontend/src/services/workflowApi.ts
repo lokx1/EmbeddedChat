@@ -189,7 +189,7 @@ class WorkflowApiService {
   // Health Check
   async healthCheck(): Promise<ApiResponse<{ status: string }>> {
     try {
-      const response = await fetch(`${this.baseUrl}/api/v1/health`);
+      const response = await fetch(`${this.baseUrl}/api/v1/workflow/health`);
       const data = await response.json();
       return { success: response.ok, data };
     } catch (error) {
