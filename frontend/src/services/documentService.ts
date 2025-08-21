@@ -268,6 +268,25 @@ class DocumentService {
       'application/vnd.ms-excel',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       
+      // PowerPoint formats
+      'application/vnd.ms-powerpoint',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      
+      // LaTeX formats
+      'application/x-latex',
+      'text/x-latex',
+      'application/x-tex',
+      'text/x-tex',
+      
+      // Rich text formats
+      'application/rtf',
+      'text/rtf',
+      
+      // OpenDocument formats
+      'application/vnd.oasis.opendocument.text',
+      'application/vnd.oasis.opendocument.presentation',
+      'application/vnd.oasis.opendocument.spreadsheet',
+      
       // Images (including new formats)
       'image/jpeg',
       'image/jpg',
@@ -315,7 +334,17 @@ class DocumentService {
       'text/markdown', 
       'application/pdf',
       'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-powerpoint',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'application/x-latex',
+      'text/x-latex',
+      'application/x-tex',
+      'text/x-tex',
+      'application/rtf',
+      'text/rtf',
+      'application/vnd.oasis.opendocument.text',
+      'application/vnd.oasis.opendocument.presentation'
     ];
     
     const dataTypes = [

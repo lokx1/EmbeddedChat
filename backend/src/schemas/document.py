@@ -17,7 +17,7 @@ class DocumentCreate(DocumentBase):
     @field_validator('file_size')
     @classmethod
     def validate_file_size(cls, v):
-        max_size = 50 * 1024 * 1024  # 50MB
+        max_size = 200 * 1024 * 1024  # 200MB to match route
         if v > max_size:
             raise ValueError(f'File size cannot exceed {max_size} bytes')
         return v

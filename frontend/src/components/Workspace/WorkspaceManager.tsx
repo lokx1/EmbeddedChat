@@ -15,6 +15,7 @@ import {
 } from '@heroicons/react/24/outline';
 
 import ChatContainer from '../Chat/ChatContainer';
+import SimpleDocumentsPage from '../../pages/SimpleDocumentsPage';
 
 // Placeholder components for different modules
 const ChatModule = () => (
@@ -22,12 +23,7 @@ const ChatModule = () => (
 );
 
 const DocumentModule = () => (
-  <div className="h-full overflow-auto p-6">
-    <h2 className="text-2xl font-bold text-gray-900 mb-4">Document Management</h2>
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-      <p className="text-gray-600">Document upload and management interface will be implemented here.</p>
-    </div>
-  </div>
+  <SimpleDocumentsPage />
 );
 
 const WorkflowModule = () => {

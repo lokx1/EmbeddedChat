@@ -1,1 +1,1 @@
-// Document list viewer
+export { default } from './DocumentListSimple';

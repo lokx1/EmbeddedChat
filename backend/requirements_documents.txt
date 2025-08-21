@@ -1,0 +1,34 @@
+# Additional requirements for enhanced document processing
+
+# PowerPoint processing
+python-pptx>=0.6.21
+
+# LaTeX processing  
+pylatexenc>=2.10
+
+# Text extraction libraries (no system dependencies)
+# RTF processing
+striprtf>=0.0.26
+
+# OpenDocument processing  
+odfpy>=1.4.0
+
+# Note: textract has complex system dependencies and is disabled
+
+# Google AI Client for Gemini
+google-genai>=0.3.0
+
+# Alternative AI clients
+openai>=1.0.0
+anthropic>=0.7.0
+
+# Core document processing
+PyPDF2>=3.0.1
+PyMuPDF>=1.23.0
+python-docx>=0.8.11
+openpyxl>=3.1.2
+Pillow>=10.0.0
+
+# Web and async support
+aiohttp>=3.8.0
+httpx>=0.24.0

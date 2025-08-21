@@ -19,11 +19,16 @@ async def lifespan(app: FastAPI):
     print(f"Starting {settings.APP_NAME} v{settings.VERSION}")
     print(f"Environment: {'Development' if settings.DEBUG else 'Production'}")
     
-    # Skip table creation - tables already exist
-    # async with engine.begin() as conn:
-    #     # Import all models to ensure they are registered
-    #     from src.models.database import Base
-    #     await conn.run_sync(Base.metadata.create_all)
+    # Create tables if they don't exist
+    try:
+        async with engine.begin() as conn:
+            # Import all models to ensure they are registered
+            from src.models.database import Base
+            await conn.run_sync(Base.metadata.create_all)
+        print("✅ Database tables created/verified")
+    except Exception as e:
+        print(f"⚠️ Database setup warning: {e}")
+        print("📝 Will continue with file-only uploads")
     
     yield
     

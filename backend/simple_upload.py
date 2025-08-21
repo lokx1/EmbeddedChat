@@ -91,6 +91,28 @@ async def list_documents():
         "size": len(files)
     }
 
+@app.get("/api/v1/documents/{document_id}/download")
+async def download_document(document_id: int):
+    """Download document by ID"""
+    try:
+        # Find file by ID mapping
+        files = []
+        if UPLOAD_DIR.exists():
+            for file_path in UPLOAD_DIR.iterdir():
+                if file_path.is_file():
+                    file_id = hash(file_path.name) % 1000
+                    if file_id == document_id:
+                        from fastapi.responses import FileResponse
+                        return FileResponse(
+                            path=str(file_path),
+                            filename=file_path.name,
+                            media_type='application/octet-stream'
+                        )
+        
+        return {"error": "File not found", "id": document_id}
+    except Exception as e:
+        return {"error": str(e)}
+
 @app.get("/")
 async def root():
     return {"message": "Simple Upload Test Server", "status": "running"}

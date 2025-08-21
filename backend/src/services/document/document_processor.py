@@ -32,6 +32,24 @@ try:
 except ImportError:
     OFFICE_AVAILABLE = False
 
+# PowerPoint processing
+try:
+    from pptx import Presentation
+    PPT_AVAILABLE = True
+except ImportError:
+    PPT_AVAILABLE = False
+
+# LaTeX processing
+try:
+    import pylatexenc.latex2text
+    LATEX_AVAILABLE = True
+except ImportError:
+    LATEX_AVAILABLE = False
+
+# Additional document formats - textract is optional due to system dependencies
+ADVANCED_TEXT_AVAILABLE = False  # Disabled textract to avoid installation issues
+
+
 from ..workflow.ai_providers import AIProviderFactory
 
 logger = logging.getLogger(__name__)
@@ -51,7 +69,18 @@ class DocumentProcessor:
             'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
             'text/csv', 'application/json',
             'application/vnd.ms-excel',
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            # PowerPoint formats
+            'application/vnd.ms-powerpoint',
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            # LaTeX formats
+            'application/x-latex', 'text/x-latex', 'application/x-tex', 'text/x-tex',
+            # Rich text formats
+            'application/rtf', 'text/rtf',
+            # OpenDocument formats
+            'application/vnd.oasis.opendocument.text',
+            'application/vnd.oasis.opendocument.presentation',
+            'application/vnd.oasis.opendocument.spreadsheet'
         }
         
         # Audio types supported by Gemini
@@ -205,6 +234,14 @@ class DocumentProcessor:
                 extracted_text = await self._extract_text_file(file_path)
             elif mime_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
                 extracted_text = await self._extract_docx_text(file_path)
+            elif mime_type in ["application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation"]:
+                extracted_text = await self._extract_ppt_text(file_path)
+            elif mime_type in ["application/x-latex", "text/x-latex", "application/x-tex", "text/x-tex"]:
+                extracted_text = await self._extract_latex_text(file_path)
+            elif mime_type in ["application/rtf", "text/rtf"]:
+                extracted_text = await self._extract_rtf_text(file_path)
+            elif mime_type in ["application/vnd.oasis.opendocument.text", "application/vnd.oasis.opendocument.presentation"]:
+                extracted_text = await self._extract_odt_text(file_path)
             elif mime_type == "text/csv":
                 extracted_text = await self._extract_csv_text(file_path)
             elif mime_type == "application/json":
@@ -382,6 +419,155 @@ class DocumentProcessor:
             logger.error(f"Error extracting JSON text: {str(e)}")
             return "Error extracting JSON content"
     
+    async def _extract_ppt_text(self, file_path: str) -> str:
+        """Extract text from PowerPoint files"""
+        try:
+            if not PPT_AVAILABLE:
+                return "PowerPoint processing library not available"
+            
+            from pptx import Presentation
+            
+            prs = Presentation(file_path)
+            text_runs = []
+            
+            for slide_num, slide in enumerate(prs.slides, 1):
+                slide_text = f"=== Slide {slide_num} ===\n"
+                
+                for shape in slide.shapes:
+                    if hasattr(shape, "text") and shape.text:
+                        slide_text += shape.text + "\n"
+                    
+                    # Extract text from tables
+                    if shape.shape_type == 19:  # Table
+                        try:
+                            table = shape.table
+                            for row in table.rows:
+                                row_text = []
+                                for cell in row.cells:
+                                    row_text.append(cell.text.strip())
+                                slide_text += " | ".join(row_text) + "\n"
+                        except:
+                            pass
+                
+                text_runs.append(slide_text)
+            
+            extracted_text = "\n".join(text_runs)
+            return self._clean_text_for_db(extracted_text)
+            
+        except Exception as e:
+            logger.error(f"Error extracting PowerPoint text: {str(e)}")
+            return "Error extracting PowerPoint content"
+    
+    async def _extract_latex_text(self, file_path: str) -> str:
+        """Extract text from LaTeX files"""
+        try:
+            if not LATEX_AVAILABLE:
+                # Fallback to plain text extraction
+                return await self._extract_text_file(file_path)
+            
+            from pylatexenc.latex2text import LatexNodes2Text
+            
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as file:
+                latex_content = file.read()
+            
+            # Convert LaTeX to plain text
+            converter = LatexNodes2Text()
+            plain_text = converter.latex_to_text(latex_content)
+            
+            return self._clean_text_for_db(plain_text)
+            
+        except Exception as e:
+            logger.error(f"Error extracting LaTeX text: {str(e)}")
+            # Fallback to plain text
+            try:
+                return await self._extract_text_file(file_path)
+            except:
+                return "Error extracting LaTeX content"
+    
+    async def _extract_rtf_text(self, file_path: str) -> str:
+        """Extract text from RTF files"""
+        try:
+            # Try with striprtf library first (more reliable)
+            try:
+                from striprtf.striprtf import rtf_to_text
+                with open(file_path, 'r', encoding='utf-8', errors='ignore') as file:
+                    rtf_content = file.read()
+                text = rtf_to_text(rtf_content)
+                return self._clean_text_for_db(text)
+            except ImportError:
+                pass
+                
+            # Skip textract dependency - using basic parsing only
+            
+            # Basic RTF parsing as last resort
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as file:
+                content = file.read()
+            
+            # Simple RTF text extraction (basic approach)
+            import re
+            # Remove RTF control codes
+            text = re.sub(r'\\[a-z]+\d*\s?', ' ', content)
+            text = re.sub(r'[{}]', '', text)
+            text = re.sub(r'\s+', ' ', text).strip()
+            
+            return self._clean_text_for_db(text)
+                
+        except Exception as e:
+            logger.error(f"Error extracting RTF text: {str(e)}")
+            return "Error extracting RTF content"
+    
+    async def _extract_odt_text(self, file_path: str) -> str:
+        """Extract text from OpenDocument files"""
+        try:
+            # Try with odfpy library first (more reliable)
+            try:
+                from odf.opendocument import load
+                from odf.text import P
+                from odf import teletype
+                
+                doc = load(file_path)
+                text_content = []
+                
+                for paragraph in doc.getElementsByType(P):
+                    text_content.append(teletype.extractText(paragraph))
+                
+                extracted_text = '\n'.join(text_content)
+                return self._clean_text_for_db(extracted_text)
+                
+            except ImportError:
+                pass
+            
+            # Skip textract dependency - using basic parsing only
+            
+            # Basic ODT parsing - ODT files are ZIP archives containing XML
+            import zipfile
+            import xml.etree.ElementTree as ET
+            
+            with zipfile.ZipFile(file_path, 'r') as zip_file:
+                # Try to read content.xml
+                try:
+                    content_xml = zip_file.read('content.xml')
+                    root = ET.fromstring(content_xml)
+                    
+                    # Extract text from all text nodes
+                    text_content = []
+                    for elem in root.iter():
+                        if elem.text and elem.text.strip():
+                            text_content.append(elem.text.strip())
+                        if elem.tail and elem.tail.strip():
+                            text_content.append(elem.tail.strip())
+                    
+                    extracted_text = ' '.join(text_content)
+                    return self._clean_text_for_db(extracted_text)
+                    
+                except Exception as xml_error:
+                    logger.warning(f"XML parsing failed: {xml_error}")
+                    return "OpenDocument content could not be extracted - XML parsing failed"
+                
+        except Exception as e:
+            logger.error(f"Error extracting OpenDocument text: {str(e)}")
+            return "Error extracting OpenDocument content"
+    
     async def _analyze_image_with_openai(self, image_base64: str, api_key: str) -> Dict[str, Any]:
         """Analyze image using OpenAI Vision API"""
         try:
@@ -396,7 +582,7 @@ class DocumentProcessor:
                         "content": [
                             {
                                 "type": "text", 
-                                "text": "Phân tích hình ảnh này một cách chi tiết. Mô tả những gì bạn thấy, bao gồm các đối tượng, văn bản, màu sắc, và bất kỳ thông tin quan trọng nào khác. Nếu có văn bản trong ảnh, hãy trích xuất nó."
+                                "text": "Analyze this image in detail. Describe what you see including objects, text, colors, and any important information. If there is text in the image, extract it."
                             },
                             {
                                 "type": "image_url",
@@ -418,7 +604,7 @@ class DocumentProcessor:
                 messages=[
                     {
                         "role": "user",
-                        "content": f"Tóm tắt ngắn gọn nội dung chính của hình ảnh dựa trên phân tích sau: {content}"
+                        "content": f"Summarize the main content of the image based on this analysis: {content}"
                     }
                 ],
                 max_tokens=200
@@ -466,7 +652,7 @@ class DocumentProcessor:
                             },
                             {
                                 "type": "text",
-                                "text": "Phân tích hình ảnh này một cách chi tiết. Mô tả những gì bạn thấy, bao gồm các đối tượng, văn bản, màu sắc, và bất kỳ thông tin quan trọng nào khác. Nếu có văn bản trong ảnh, hãy trích xuất nó."
+                                "text": "Analyze this image in detail. Describe what you see including objects, text, colors, and any important information. If there is text in the image, extract it."
                             }
                         ]
                     }
@@ -482,7 +668,7 @@ class DocumentProcessor:
                 messages=[
                     {
                         "role": "user",
-                        "content": f"Tóm tắt ngắn gọn nội dung chính của hình ảnh dựa trên phân tích sau: {content}"
+                        "content": f"Summarize the main content of the image based on this analysis: {content}"
                     }
                 ]
             )
@@ -536,7 +722,7 @@ class DocumentProcessor:
 4. **Visual Elements**: Colors, composition, style, quality
 5. **Context & Purpose**: Infer the context and purpose of this image
 
-Respond in Vietnamese with detailed analysis."""
+Provide detailed analysis in English."""
             
             # Generate analysis using official API format
             def generate_analysis():
@@ -555,7 +741,7 @@ Respond in Vietnamese with detailed analysis."""
             content = response.text
             
             # Generate concise summary
-            summary_prompt = f"Tóm tắt ngắn gọn nội dung chính của hình ảnh (tối đa 3 câu): {content[:1000]}"
+            summary_prompt = f"Provide a concise summary of the main content in this image (max 3 sentences): {content[:1000]}"
             
             def generate_summary():
                 return client.models.generate_content(
@@ -672,7 +858,7 @@ Respond in Vietnamese with detailed analysis."""
 6. **Text Recognition**: Extract any visible text or captions
 7. **Context & Purpose**: Understand the video's purpose and context
 
-Please provide detailed analysis in Vietnamese, utilizing your video understanding and temporal reasoning capabilities."""
+Please provide detailed analysis in English, utilizing your video understanding and temporal reasoning capabilities."""
             
             # Generate analysis using official video API
             def generate_analysis():
@@ -691,7 +877,7 @@ Please provide detailed analysis in Vietnamese, utilizing your video understandi
             content = response.text
             
             # Generate summary
-            summary_prompt = f"Tóm tắt nội dung chính của video này (tối đa 3 câu): {content[:1000]}"
+            summary_prompt = f"Summarize the main content of this video (max 3 sentences): {content[:1000]}"
             
             def generate_summary():
                 return client.models.generate_content(
@@ -776,7 +962,7 @@ Please provide detailed analysis in Vietnamese, utilizing your video understandi
 6. **Emotional Tone**: Analyze tone, mood, or emotional content
 7. **Background Sounds**: Identify any background sounds or environment
 
-Please provide detailed analysis in Vietnamese, including full transcription of any speech content."""
+Please provide detailed analysis in English, including full transcription of any speech content."""
             
             # Generate analysis using official audio API
             def generate_analysis():
@@ -795,7 +981,7 @@ Please provide detailed analysis in Vietnamese, including full transcription of 
             content = response.text
             
             # Generate summary
-            summary_prompt = f"Tóm tắt nội dung chính của audio này (tối đa 3 câu): {content[:1000]}"
+            summary_prompt = f"Summarize the main content of this audio (max 3 sentences): {content[:1000]}"
             
             def generate_summary():
                 return client.models.generate_content(
@@ -934,7 +1120,7 @@ Please provide detailed analysis in Vietnamese, including full transcription of 
                 messages=[
                     {
                         "role": "user",
-                        "content": f"Phân tích tài liệu sau và cung cấp thông tin chi tiết về nội dung, chủ đề chính, và những điểm quan trọng:\n\n{text[:4000]}"
+                        "content": f"Analyze the following document and provide detailed information about content, main topics, and important points:\n\n{text[:4000]}"
                     }
                 ],
                 max_tokens=1000
@@ -946,7 +1132,7 @@ Please provide detailed analysis in Vietnamese, including full transcription of 
                 messages=[
                     {
                         "role": "user",
-                        "content": f"Tóm tắt ngắn gọn nội dung chính của tài liệu sau:\n\n{text[:2000]}"
+                        "content": f"Provide a concise summary of the main content of the following document:\n\n{text[:2000]}"
                     }
                 ],
                 max_tokens=300
@@ -973,7 +1159,7 @@ Please provide detailed analysis in Vietnamese, including full transcription of 
                 messages=[
                     {
                         "role": "user",
-                        "content": f"Phân tích tài liệu sau và cung cấp thông tin chi tiết về nội dung, chủ đề chính, và những điểm quan trọng:\n\n{text[:4000]}"
+                        "content": f"Analyze the following document and provide detailed information about content, main topics, and important points:\n\n{text[:4000]}"
                     }
                 ]
             )
@@ -985,7 +1171,7 @@ Please provide detailed analysis in Vietnamese, including full transcription of 
                 messages=[
                     {
                         "role": "user",
-                        "content": f"Tóm tắt ngắn gọn nội dung chính của tài liệu sau:\n\n{text[:2000]}"
+                        "content": f"Provide a concise summary of the main content of the following document:\n\n{text[:2000]}"
                     }
                 ]
             )
@@ -1017,7 +1203,7 @@ Please provide detailed analysis in Vietnamese, including full transcription of 
 Document:
 {text[:4000]}
 
-Please respond in Vietnamese."""
+Please respond in English."""
             
             # Generate analysis using new API
             def generate_analysis():
@@ -1029,7 +1215,7 @@ Please respond in Vietnamese."""
             analysis_response = await asyncio.get_event_loop().run_in_executor(None, generate_analysis)
             
             # Summary
-            summary_prompt = f"Summarize the main content of the document in Vietnamese (max 200 words):\n\n{text[:2000]}"
+            summary_prompt = f"Summarize the main content of the document in English (max 200 words):\n\n{text[:2000]}"
             
             def generate_summary():
                 return client.models.generate_content(
@@ -1094,7 +1280,7 @@ Please provide a thorough analysis in Vietnamese, utilizing your natural vision 
             content = response.text
             
             # Generate executive summary
-            summary_prompt = f"Tạo tóm tắt tổng quan ngắn gọn của tài liệu PDF này (tối đa 200 từ): {content[:2000]}"
+            summary_prompt = f"Create a concise executive summary of this PDF document (max 200 words): {content[:2000]}"
             
             def generate_summary():
                 return client.models.generate_content(
