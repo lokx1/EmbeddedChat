@@ -54,7 +54,7 @@ export interface WorkflowEditorResponse {
   updated_at: string;
 }
 
-const BASE_URL = `${(import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '')}/api/workflow/editor`;
+const BASE_URL = `${(import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '')}/api/v1/workflow/editor`;
 
 export const workflowEditorApi = {
   // Save a new workflow

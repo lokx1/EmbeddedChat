@@ -152,7 +152,7 @@ export const WorkflowDashboard: React.FC<WorkflowDashboardProps> = ({ onOpenEdit
             <div className="ml-3">
               <h3 className="text-sm font-medium text-red-800">Backend Unavailable</h3>
               <p className="text-sm text-red-700 mt-1">
-                Cannot connect to the backend service. Please ensure the backend is running on http://localhost:8000
+                Cannot connect to the backend service. Please ensure the backend is running on {import.meta.env.VITE_API_URL || 'http://localhost:8000'}
               </p>
               <button 
                 onClick={checkHealth}
